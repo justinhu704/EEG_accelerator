@@ -1,0 +1,33 @@
+# Quartus generated files
+db/
+incremental_db/
+output_files/
+simulation/
+*.qws
+*.qdf
+*.rpt
+*.summary
+*.smsg
+*.sof
+*.pof
+*.jdi
+*.cdf
+
+# ModelSim / Questa generated files
+questa/work/
+questa/transcript
+questa/vsim.wlf
+questa/*.mpf
+questa/*.mti
+transcript
+work/
+*.wlf
+*.bak
+
+# MATLAB-exported simulation data and reference documents
+mem/
+*.pdf
+
+# Miscellaneous generated files
+c5_pin_model_dump.txt
+*.tmp
