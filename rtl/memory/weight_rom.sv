@@ -3,7 +3,11 @@
 module weight_rom #(
     parameter int DATA_W = 16,
     parameter int DEPTH  = 210,
+
+    // DEPTH向上取整數
     parameter int ADDR_W = $clog2(DEPTH),
+
+    // 預設conv1的權重
     parameter     MEM_FILE = "../mem/weights/conv1_W.mem"
 ) (
     input  logic                         clk,

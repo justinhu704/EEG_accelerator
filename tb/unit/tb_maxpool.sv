@@ -38,7 +38,7 @@ module tb_maxpool;
     logic pool2_done_seen;
 
     // Pool1: ReLU2 F12 -> Pool1 F12, so no format shift.
-    maxpool_engine #(
+    maxpool_layer_mem #(
         .IN_H(19),
         .IN_W(152),
         .IN_CH(20),
@@ -62,7 +62,7 @@ module tb_maxpool;
     );
 
     // Pool2: ReLU3 F13 -> Pool2 F14, so the maximum is shifted left once.
-    maxpool_engine #(
+    maxpool_layer_mem #(
         .IN_H(18),
         .IN_W(14),
         .IN_CH(15),

@@ -1,6 +1,9 @@
 `timescale 1ns/1ps
 
+// ==================================================
 // Verifies RAM A -> Conv1 -> BN1 -> ReLU1 -> RAM B.
+// ==================================================
+
 module tb_cnn;
     localparam int OUTPUT_SIZE = 20 * 156 * 21;
     localparam int SAMPLES = 4;

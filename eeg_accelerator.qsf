@@ -39,7 +39,7 @@
 
 set_global_assignment -name FAMILY "Cyclone V"
 set_global_assignment -name DEVICE 5CSEMA5F31C6
-set_global_assignment -name TOP_LEVEL_ENTITY conv_engine
+set_global_assignment -name TOP_LEVEL_ENTITY eeg_top
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 25.1STD.0
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "21:53:26  AUGUST 01, 2026"
 set_global_assignment -name LAST_QUARTUS_VERSION "25.1std.0 Lite Edition"
@@ -60,6 +60,21 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_controller.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/memory/weight_rom.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/memory/activation_ram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/bn_relu/bn_affine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/bn_relu/relu.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage1_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage2_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage3_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_gru_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/maxpool_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/maxpool_layer_mem.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/sigmoid_lut.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/tanh_lut.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/fc_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/argmax_105.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/eeg_controller.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/eeg_top.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/sat16.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/pe_mac.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/pe_array_21.sv

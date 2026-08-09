@@ -11,15 +11,15 @@ package fixed_point_pkg;
     parameter int BN1_OUT_F     = 11;
     parameter int RELU1_OUT_F   = 11;
 
-    parameter int CONV2_OUT_F   = 9;
+    parameter int CONV2_OUT_F   = 10;
     parameter int BN2_OUT_F     = 11;
     parameter int RELU2_OUT_F   = 12;
     parameter int POOL1_OUT_F   = 12;
 
     parameter int CONV3_OUT_F   = 10;
-    parameter int BN3_OUT_F     = 13;
-    parameter int RELU3_OUT_F   = 13;
-    parameter int POOL2_OUT_F   = 14;
+    parameter int BN3_OUT_F     = 12;
+    parameter int RELU3_OUT_F   = 12;
+    parameter int POOL2_OUT_F   = 13;
 
     parameter int RESHAPE_OUT_F = POOL2_OUT_F;
     parameter int GRU_INPUT_F   = RESHAPE_OUT_F;
@@ -46,21 +46,21 @@ package fixed_point_pkg;
     // ------------------------------------------------------------------
     parameter int BN1_A_F = 11;
     parameter int BN1_B_F = 13;
-    parameter int BN2_A_F = 16;
+    parameter int BN2_A_F = 15;
     parameter int BN2_B_F = 14;
-    parameter int BN3_A_F = 16;
-    parameter int BN3_B_F = 15;
+    parameter int BN3_A_F = 15;
+    parameter int BN3_B_F = 14;
 
-    parameter int FC_BN_A_F = 12;
+    parameter int FC_BN_A_F = 13;
     parameter int FC_BN_B_F = 12;
 
     // ------------------------------------------------------------------
     // GRU and fully-connected parameters.
     // ------------------------------------------------------------------
     parameter int GRU_WR_F = 15;
-    parameter int GRU_WZ_F = 15;
+    parameter int GRU_WZ_F = 14;
     parameter int GRU_WH_F = 15;
-    parameter int GRU_UR_F = 14;
+    parameter int GRU_UR_F = 15;
     parameter int GRU_UZ_F = 15;
     parameter int GRU_UH_F = 14;
     parameter int GRU_BR_F = 15;
@@ -83,7 +83,7 @@ package fixed_point_pkg;
     parameter int CONV2_BIAS_SHIFT =
         RELU1_OUT_F + CONV2_W_F - CONV2_B_F;       // 10
     parameter int CONV2_OUTPUT_SHIFT =
-        RELU1_OUT_F + CONV2_W_F - CONV2_OUT_F;     // 16
+        RELU1_OUT_F + CONV2_W_F - CONV2_OUT_F;     // 15
 
     parameter int CONV3_BIAS_SHIFT =
         POOL1_OUT_F + CONV3_W_F - CONV3_B_F;       // 12
