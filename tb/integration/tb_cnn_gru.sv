@@ -14,6 +14,7 @@ module tb_cnn_gru;
     logic start;
     logic busy;
     logic done;
+    logic input_ready;
     logic output_valid;
     logic [31:0] output_addr;
     logic signed [15:0] output_data;
@@ -59,6 +60,8 @@ module tb_cnn_gru;
     ) dut (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(done),
+        .input_write_en(1'b0), .input_write_addr('0),
+        .input_write_data('0), .input_ready(input_ready),
         .output_valid(output_valid),
         .output_addr(output_addr), .output_data(output_data),
         .ram_a_read_addr(ram_a_read_addr),

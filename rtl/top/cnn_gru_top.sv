@@ -39,6 +39,13 @@ module cnn_gru_top #(
     output logic               busy,
     output logic               done,
 
+    // External loader for one 21x160 EEG sample. Writes are accepted only
+    // while this CNN/GRU block is idle. Addresses 0..3359 hold one sample.
+    input  logic               input_write_en,
+    input  logic [11:0]        input_write_addr,
+    input  logic signed [15:0] input_write_data,
+    output logic               input_ready,
+
     // Live final GRU stream: 9 hidden units x 18 time steps.
     output logic               output_valid,
     output logic [31:0]        output_addr,
@@ -131,10 +138,14 @@ module cnn_gru_top #(
             ram_b_internal_read_addr = '0;
     end
 
-    // RAM A destinations: ReLU2, ReLU3, and finally GRU.
+    // RAM A destinations: external EEG loader, ReLU2, ReLU3, and GRU.
     always_comb begin
-        ram_a_write_en = conv2_valid || conv3_valid || gru_valid;
-        if (gru_valid) begin
+        ram_a_write_en = (input_ready && input_write_en) ||
+                         conv2_valid || conv3_valid || gru_valid;
+        if (input_ready && input_write_en) begin
+            ram_a_write_addr = {{(RAM_ADDR_W-12){1'b0}}, input_write_addr};
+            ram_a_write_data = input_write_data;
+        end else if (gru_valid) begin
             ram_a_write_addr = gru_addr[15:0];
             ram_a_write_data = gru_data;
         end else if (conv3_valid) begin
@@ -318,6 +329,8 @@ module cnn_gru_top #(
     always_comb begin
         busy = (state != S_IDLE) && (state != S_DONE);
         done = (state == S_DONE);
+        // Do not accept a write in the same cycle as start.
+        input_ready = (state == S_IDLE) && !start;
         output_valid = gru_valid;
         output_addr = gru_addr;
         output_data = gru_data;

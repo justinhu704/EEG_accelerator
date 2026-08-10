@@ -11,6 +11,9 @@ module tb_eeg_top;
 
     logic clk, rst_n, start;
     logic busy, done;
+    logic input_write_en, input_ready;
+    logic [11:0] input_write_addr;
+    logic signed [15:0] input_write_data;
     logic [6:0] class_index;
     logic signed [15:0] winning_logit;
     logic logit_valid;
@@ -59,6 +62,10 @@ module tb_eeg_top;
     ) dut (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(done),
+        .input_write_en(input_write_en),
+        .input_write_addr(input_write_addr),
+        .input_write_data(input_write_data),
+        .input_ready(input_ready),
         .class_index(class_index), .winning_logit(winning_logit),
         .logit_valid(logit_valid), .logit_index(logit_index),
         .logit_data(logit_data),
@@ -93,6 +100,9 @@ module tb_eeg_top;
         clk = 1'b0;
         rst_n = 1'b0;
         start = 1'b0;
+        input_write_en = 1'b0;
+        input_write_addr = '0;
+        input_write_data = '0;
         logit_read_addr = '0;
         stream_checked = 0;
         stream_errors = 0;

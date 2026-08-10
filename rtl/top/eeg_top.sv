@@ -37,6 +37,14 @@ module eeg_top #(
     input  logic               start,
     output logic               busy,
     output logic               done,
+
+    // Load one quantized EEG sample into input RAM before asserting start.
+    // Valid addresses are 0..3359 (21x160, signed Q12 values).
+    input  logic               input_write_en,
+    input  logic [11:0]        input_write_addr,
+    input  logic signed [15:0] input_write_data,
+    output logic               input_ready,
+
     output logic [6:0]         class_index,
     output logic signed [15:0] winning_logit,
 
@@ -50,6 +58,7 @@ module eeg_top #(
     output logic signed [15:0] logit_read_data
 );
     logic cnn_start, cnn_done;
+    logic cnn_input_ready;
     logic fc1_start, fc1_done;
     logic fc_out_start, fc_out_done;
     logic argmax_start, argmax_done;
@@ -103,12 +112,19 @@ module eeg_top #(
     ) u_cnn_gru (
         .clk(clk), .rst_n(rst_n), .start(cnn_start),
         .busy(), .done(cnn_done),
+        .input_write_en(input_write_en && input_ready),
+        .input_write_addr(input_write_addr),
+        .input_write_data(input_write_data),
+        .input_ready(cnn_input_ready),
         .output_valid(), .output_addr(), .output_data(),
         .ram_a_read_addr(cnn_ram_addr[15:0]),
         .ram_a_read_data(cnn_ram_data)
     );
 
     assign cnn_ram_addr = fc1_input_addr;
+    // cnn_gru_top becomes locally idle after GRU, but FC1 still needs its RAM
+    // A contents. Therefore the global busy/done signals also gate loading.
+    assign input_ready = cnn_input_ready && !busy && !done;
 
     fc_engine #(
         .INPUT_SIZE(162), .OUTPUT_SIZE(40),
