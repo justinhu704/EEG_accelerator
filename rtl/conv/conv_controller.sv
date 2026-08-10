@@ -25,8 +25,6 @@ module conv_controller #(
     output logic [31:0] output_addr,
     output logic [31:0] output_ch_idx
 );
-    localparam int KERNEL_VOLUME = K_H * K_W * IN_CH;
-
     typedef enum logic [2:0] {
         S_IDLE,
         S_CLEAR,
@@ -40,24 +38,22 @@ module conv_controller #(
     integer out_h_count;
     integer out_w_count;
     integer out_ch_count;
-    integer kernel_count;
-    integer kh;
-    integer kw;
-    integer in_ch;
+    // Explicit nested kernel coordinates avoid synthesizing division and
+    // modulo logic from a flattened kernel_count.
+    integer kh_count;
+    integer kw_count;
+    integer in_ch_count;
     logic data_valid;
 
     always_comb begin
-        kh    = kernel_count % K_H;
-        kw    = (kernel_count / K_H) % K_W;
-        in_ch = kernel_count / (K_H * K_W);
-
         input_addr =
-              (out_h_count + kh)
-            + IN_H * ((out_w_count + kw) + IN_W * in_ch);
+              (out_h_count + kh_count)
+            + IN_H * ((out_w_count + kw_count) + IN_W * in_ch_count);
 
         weight_addr =
-              kh
-            + K_H * (kw + K_W * (in_ch + IN_CH * out_ch_count));
+              kh_count
+            + K_H * (kw_count + K_W *
+              (in_ch_count + IN_CH * out_ch_count));
 
         bias_addr = out_ch_count;
         output_addr =
@@ -78,7 +74,9 @@ module conv_controller #(
             out_h_count  <= 0;
             out_w_count  <= 0;
             out_ch_count <= 0;
-            kernel_count <= 0;
+            kh_count     <= 0;
+            kw_count     <= 0;
+            in_ch_count  <= 0;
             data_valid   <= 1'b0;
         end else begin
             // This is the valid bit for data returned by synchronous memory.
@@ -91,23 +89,39 @@ module conv_controller #(
                         out_h_count  <= 0;
                         out_w_count  <= 0;
                         out_ch_count <= 0;
-                        kernel_count <= 0;
+                        kh_count     <= 0;
+                        kw_count     <= 0;
+                        in_ch_count  <= 0;
                         state        <= S_CLEAR;
                     end
                 end
 
                 S_CLEAR: begin
-                    kernel_count <= 0;
+                    kh_count    <= 0;
+                    kw_count    <= 0;
+                    in_ch_count <= 0;
                     state <= S_STREAM;
                 end
 
                 // Issue one address every clock. At the same edge, pe_mac
                 // consumes the value returned for the previous address.
                 S_STREAM: begin
-                    if (kernel_count == KERNEL_VOLUME-1) begin
-                        state <= S_DRAIN;
+                    if (kh_count < K_H-1) begin
+                        kh_count <= kh_count + 1;
                     end else begin
-                        kernel_count <= kernel_count + 1;
+                        kh_count <= 0;
+                        if (kw_count < K_W-1) begin
+                            kw_count <= kw_count + 1;
+                        end else begin
+                            kw_count <= 0;
+                            if (in_ch_count < IN_CH-1) begin
+                                in_ch_count <= in_ch_count + 1;
+                            end else begin
+                                // The final (kh, kw, in_ch) address was
+                                // issued in this clock. Drain its RAM result.
+                                state <= S_DRAIN;
+                            end
+                        end
                     end
                 end
 
