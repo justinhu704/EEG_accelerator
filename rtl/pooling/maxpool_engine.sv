@@ -19,6 +19,7 @@ module maxpool_engine #(
     output logic               busy,
     output logic               done,
 
+    // send address to RAM, wait for result to return
     output logic [31:0]        input_addr,
     input  logic signed [15:0] input_data,
 
@@ -49,7 +50,7 @@ module maxpool_engine #(
     logic signed [47:0] max_rescaled;
     logic signed [15:0] max_saturated;
 
-    // MATLAB/Verilog column-major address:
+    // column-major address mapping
     // address = h + IN_H * (w + IN_W * channel)
     always_comb begin
         kh = pool_count % POOL_H;
@@ -64,6 +65,7 @@ module maxpool_engine #(
     end
 
     // Convert the selected maximum from INPUT_F to OUTPUT_F.
+    // 小數位截斷 & overflow protection
     always_comb begin
         max_extended = {{32{max_value[15]}}, max_value};
         if (OUTPUT_F >= INPUT_F)

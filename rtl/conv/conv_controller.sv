@@ -1,6 +1,7 @@
 // Pipelined multi-channel 2-D convolution controller.
 // After one pipeline-fill clock, each S_STREAM clock issues the next memory
 // address and accumulates the value returned for the previous address.
+
 module conv_controller #(
     parameter int IN_H   = 21,
     parameter int IN_W   = 160,
@@ -25,6 +26,7 @@ module conv_controller #(
     output logic [31:0] output_addr,
     output logic [31:0] output_ch_idx
 );
+
     typedef enum logic [2:0] {
         S_IDLE,
         S_CLEAR,
@@ -35,11 +37,11 @@ module conv_controller #(
     } state_t;
 
     state_t state;
+    // current output index
     integer out_h_count;
     integer out_w_count;
     integer out_ch_count;
-    // Explicit nested kernel coordinates avoid synthesizing division and
-    // modulo logic from a flattened kernel_count.
+    // current kernel index
     integer kh_count;
     integer kw_count;
     integer in_ch_count;
@@ -79,8 +81,7 @@ module conv_controller #(
             in_ch_count  <= 0;
             data_valid   <= 1'b0;
         end else begin
-            // This is the valid bit for data returned by synchronous memory.
-            // It is delayed one clock from the address-issue phase.
+            // data valid is delayed one clock from RAM address issue
             data_valid <= (state == S_STREAM);
 
             case (state)
@@ -103,46 +104,50 @@ module conv_controller #(
                     state <= S_STREAM;
                 end
 
-                // Issue one address every clock. At the same edge, pe_mac
-                // consumes the value returned for the previous address.
                 S_STREAM: begin
+                    // kernel height counter
                     if (kh_count < K_H-1) begin
                         kh_count <= kh_count + 1;
                     end else begin
                         kh_count <= 0;
+                        // kernel width counter
                         if (kw_count < K_W-1) begin
                             kw_count <= kw_count + 1;
                         end else begin
                             kw_count <= 0;
+                            // input channel counter
                             if (in_ch_count < IN_CH-1) begin
                                 in_ch_count <= in_ch_count + 1;
                             end else begin
-                                // The final (kh, kw, in_ch) address was
-                                // issued in this clock. Drain its RAM result.
+                                // final address(kh, kw, in_ch) was issued in this clock
                                 state <= S_DRAIN;
                             end
                         end
                     end
                 end
 
-                // Accumulate the final value returned after the last address.
+                // Bubble, wait for RAM to return the final result
                 S_DRAIN: state <= S_OUTPUT;
 
                 S_OUTPUT: begin
+                    // output height counter
                     if (out_h_count < OUT_H-1) begin
                         out_h_count <= out_h_count + 1;
                         state <= S_CLEAR;
                     end else begin
                         out_h_count <= 0;
+                        // output width counter
                         if (out_w_count < OUT_W-1) begin
                             out_w_count <= out_w_count + 1;
                             state <= S_CLEAR;
                         end else begin
                             out_w_count <= 0;
+                            // output channel counter
                             if (out_ch_count < OUT_CH-1) begin
                                 out_ch_count <= out_ch_count + 1;
                                 state <= S_CLEAR;
                             end else begin
+                                // all done
                                 state <= S_DONE;
                             end
                         end

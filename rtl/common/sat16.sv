@@ -1,8 +1,11 @@
+// saturates a 48-bit value to 16-bit signed
+
 module sat16 (
     input  logic signed [47:0] value_in,
     output logic signed [15:0] value_out
 );
     always_comb begin
+        // avoid overflow
         if (value_in > 48'sd32767)
             value_out = 16'sh7fff;
         else if (value_in < -48'sd32768)

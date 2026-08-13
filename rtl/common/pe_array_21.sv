@@ -1,3 +1,6 @@
+// 21-parallel Processing Element array
+// each PE has a MAC unit and 48-bit accumulator
+
 module pe_array_21 #(
     parameter int DATA_W = 16,
     parameter int ACC_W  = 48,
@@ -11,6 +14,7 @@ module pe_array_21 #(
     input  logic signed [PES-1:0][DATA_W-1:0] weights,
     output logic signed [PES-1:0][ACC_W-1:0]  accumulators
 );
+    // replicate 21 PEs
     genvar i;
     generate
         for (i = 0; i < PES; i = i + 1) begin : gen_pe

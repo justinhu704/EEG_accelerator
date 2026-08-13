@@ -13,24 +13,23 @@ module activation_ram #(
     input  logic [ADDR_W-1:0]           read_addr,
     output logic signed [DATA_W-1:0]    read_data
 );
-    // memory blocks. Other synthesis tools may safely ignore this attribute.
+    // memory blocks
     (* ramstyle = "M10K" *)
     logic signed [DATA_W-1:0] mem [0:DEPTH-1];
 
-    // Optional power-up contents. On FPGA this data is included in the
-    // programming image when the selected device/tool supports RAM init.
+    // optional initialization
     initial begin
         if (MEM_FILE != "")
             $readmemh(MEM_FILE, mem, 0, DEPTH-1);
     end
 
-    // Independent synchronous write port.
+    // independent synchronous write port
     always_ff @(posedge clk) begin
         if (write_en)
             mem[write_addr] <= write_data;
     end
 
-    // Independent synchronous read port (one-clock read latency).
+    // independent synchronous read port with one-clock read latency
     always_ff @(posedge clk) begin
         read_data <= mem[read_addr];
     end

@@ -1,4 +1,4 @@
-/* 相乘、累加 */
+// multiply-accumulate
 
 module pe_mac #(
     parameter int DATA_W = 16,
@@ -12,6 +12,7 @@ module pe_mac #(
     input  logic signed [DATA_W-1:0]     weight_in,
     output logic signed [ACC_W-1:0]      accumulator
 );
+    // double width for product
     logic signed [(2*DATA_W)-1:0] product;
 
     always_comb product = data_in * weight_in;

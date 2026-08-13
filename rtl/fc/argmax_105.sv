@@ -21,7 +21,7 @@ module argmax_105 (
             done        <= 1'b0;
             sample_count <= 7'd0;
             class_index <= 7'd0;
-            max_value   <= -16'sd32768;
+            max_value   <= 16'sh8000;
         end else begin
             done <= 1'b0;
 
@@ -29,7 +29,7 @@ module argmax_105 (
                 busy         <= 1'b1;
                 sample_count <= 7'd0;
                 class_index  <= 7'd0;
-                max_value    <= -16'sd32768;
+                max_value    <= 16'sh8000;
             end else if (busy && in_valid) begin
                 // Strict '>' keeps the smaller/first index when values tie.
                 if ($signed(in_data) > $signed(max_value)) begin

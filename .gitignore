@@ -25,9 +25,17 @@ work/
 *.bak
 
 # MATLAB-exported simulation data and reference documents
-mem/
+mem/*
+!mem/board/
+!mem/board/sample0_q12.mem
+!mem/board/sample105_q12.mem
 *.pdf
 
 # Miscellaneous generated files
 c5_pin_model_dump.txt
 *.tmp
+__pycache__/
+host/data/*.bin
+host/data/*.csv
+host/results/*.csv
+tmp/
