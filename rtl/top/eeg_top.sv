@@ -8,6 +8,8 @@ module eeg_top #(
     parameter BN1_B_FILE   = "mem/weights/bn1_B.mem",
     parameter CONV2_W_FILE = "mem/weights/conv2_W.mem",
     parameter CONV2_B_FILE = "mem/weights/conv2_b.mem",
+    parameter CONV2_PACKED_W_FILE = "mem/weights/conv2_W_x4.mem",
+    parameter CONV2_PACKED_B_FILE = "mem/weights/conv2_b_x4.mem",
     parameter BN2_A_FILE   = "mem/weights/bn2_A.mem",
     parameter BN2_B_FILE   = "mem/weights/bn2_B.mem",
     parameter CONV3_W_FILE = "mem/weights/conv3_W.mem",
@@ -93,13 +95,15 @@ module eeg_top #(
         .busy(busy), .done(done)
     );
 
-    // This already contains both activation RAMs and the entire CNN/GRU path.
-    // Its RAM A addresses 0..161 are the flattened GRU result.
+    // This contains both activation RAMs and the complete CNN/GRU path.
+    // Result RAM B addresses 0..161 hold the flattened GRU result.
     cnn_gru_top #(
         .INPUT_FILE(INPUT_FILE),
         .CONV1_W_FILE(CONV1_W_FILE), .CONV1_B_FILE(CONV1_B_FILE),
         .BN1_A_FILE(BN1_A_FILE), .BN1_B_FILE(BN1_B_FILE),
         .CONV2_W_FILE(CONV2_W_FILE), .CONV2_B_FILE(CONV2_B_FILE),
+        .CONV2_PACKED_W_FILE(CONV2_PACKED_W_FILE),
+        .CONV2_PACKED_B_FILE(CONV2_PACKED_B_FILE),
         .BN2_A_FILE(BN2_A_FILE), .BN2_B_FILE(BN2_B_FILE),
         .CONV3_W_FILE(CONV3_W_FILE), .CONV3_B_FILE(CONV3_B_FILE),
         .BN3_A_FILE(BN3_A_FILE), .BN3_B_FILE(BN3_B_FILE),
@@ -117,13 +121,13 @@ module eeg_top #(
         .input_write_data(input_write_data),
         .input_ready(cnn_input_ready),
         .output_valid(), .output_addr(), .output_data(),
-        .ram_a_read_addr(cnn_ram_addr[15:0]),
-        .ram_a_read_data(cnn_ram_data)
+        .result_read_addr(cnn_ram_addr[15:0]),
+        .result_read_data(cnn_ram_data)
     );
 
     assign cnn_ram_addr = fc1_input_addr;
-    // cnn_gru_top becomes locally idle after GRU, but FC1 still needs its RAM
-    // A contents. Therefore the global busy/done signals also gate loading.
+    // cnn_gru_top becomes locally idle after GRU, but FC1 still needs the
+    // final-result RAM B contents. Therefore global busy/done also gate input.
     assign input_ready = cnn_input_ready && !busy && !done;
 
     fc_engine #(

@@ -2,6 +2,7 @@
 // UART receives one complete sample, writes existing RAM A, runs inference,
 // and returns the class. No third activation/input RAM is instantiated.
 module fpga_uart_top #(
+    // 921600 baud rate
     parameter integer UART_CLKS_PER_BIT = 54,
     parameter CONV1_W_FILE  = "mem/weights/conv1_W.mem",
     parameter CONV1_B_FILE  = "mem/weights/conv1_b.mem",
@@ -9,6 +10,8 @@ module fpga_uart_top #(
     parameter BN1_B_FILE    = "mem/weights/bn1_B.mem",
     parameter CONV2_W_FILE  = "mem/weights/conv2_W.mem",
     parameter CONV2_B_FILE  = "mem/weights/conv2_b.mem",
+    parameter CONV2_PACKED_W_FILE = "mem/weights/conv2_W_x4.mem",
+    parameter CONV2_PACKED_B_FILE = "mem/weights/conv2_b_x4.mem",
     parameter BN2_A_FILE    = "mem/weights/bn2_A.mem",
     parameter BN2_B_FILE    = "mem/weights/bn2_B.mem",
     parameter CONV3_W_FILE  = "mem/weights/conv3_W.mem",
@@ -112,6 +115,8 @@ module fpga_uart_top #(
         .CONV1_W_FILE(CONV1_W_FILE), .CONV1_B_FILE(CONV1_B_FILE),
         .BN1_A_FILE(BN1_A_FILE), .BN1_B_FILE(BN1_B_FILE),
         .CONV2_W_FILE(CONV2_W_FILE), .CONV2_B_FILE(CONV2_B_FILE),
+        .CONV2_PACKED_W_FILE(CONV2_PACKED_W_FILE),
+        .CONV2_PACKED_B_FILE(CONV2_PACKED_B_FILE),
         .BN2_A_FILE(BN2_A_FILE), .BN2_B_FILE(BN2_B_FILE),
         .CONV3_W_FILE(CONV3_W_FILE), .CONV3_B_FILE(CONV3_B_FILE),
         .BN3_A_FILE(BN3_A_FILE), .BN3_B_FILE(BN3_B_FILE),

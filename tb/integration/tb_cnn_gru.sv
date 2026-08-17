@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 
-// Full standalone-top integration test: CNN -> Pool2 -> GRU -> RAM A.
+// Full standalone-top integration test: CNN -> Pool2 -> GRU -> result RAM B.
 module tb_cnn_gru;
     localparam int SAMPLES = 4;
     localparam int OUTPUT_SIZE = 9 * 18;
@@ -18,8 +18,8 @@ module tb_cnn_gru;
     logic output_valid;
     logic [31:0] output_addr;
     logic signed [15:0] output_data;
-    logic [15:0] ram_a_read_addr;
-    logic signed [15:0] ram_a_read_data;
+    logic [15:0] result_read_addr;
+    logic signed [15:0] result_read_data;
     logic signed [15:0] expected_mem [0:SAMPLES*OUTPUT_SIZE-1];
 
     integer stream_checked;
@@ -40,6 +40,8 @@ module tb_cnn_gru;
         .BN1_B_FILE("../mem/weights/bn1_B.mem"),
         .CONV2_W_FILE("../mem/weights/conv2_W.mem"),
         .CONV2_B_FILE("../mem/weights/conv2_b.mem"),
+        .CONV2_PACKED_W_FILE("../mem/weights/conv2_W_x4.mem"),
+        .CONV2_PACKED_B_FILE("../mem/weights/conv2_b_x4.mem"),
         .BN2_A_FILE("../mem/weights/bn2_A.mem"),
         .BN2_B_FILE("../mem/weights/bn2_B.mem"),
         .CONV3_W_FILE("../mem/weights/conv3_W.mem"),
@@ -64,8 +66,8 @@ module tb_cnn_gru;
         .input_write_data('0), .input_ready(input_ready),
         .output_valid(output_valid),
         .output_addr(output_addr), .output_data(output_data),
-        .ram_a_read_addr(ram_a_read_addr),
-        .ram_a_read_data(ram_a_read_data)
+        .result_read_addr(result_read_addr),
+        .result_read_data(result_read_data)
     );
 
     always #5 clk = ~clk;
@@ -110,7 +112,7 @@ module tb_cnn_gru;
         clk = 1'b0;
         rst_n = 1'b0;
         start = 1'b0;
-        ram_a_read_addr = '0;
+        result_read_addr = '0;
         stream_checked = 0;
         stream_errors = 0;
         stream_max_difference = 0;
@@ -133,23 +135,23 @@ module tb_cnn_gru;
 
         for (i = 0; i < OUTPUT_SIZE; i = i + 1) begin
             @(negedge clk);
-            ram_a_read_addr = i[15:0];
+            result_read_addr = i[15:0];
             @(posedge clk);
             #1;
 
-            if ($isunknown(ram_a_read_data)) begin
+            if ($isunknown(result_read_data)) begin
                 if (ram_errors < 20)
-                    $display("RAM A X/Z at addr=%0d", i);
+                    $display("Result RAM X/Z at addr=%0d", i);
                 ram_errors = ram_errors + 1;
             end else begin
-                difference = absolute_difference(ram_a_read_data,
+                difference = absolute_difference(result_read_data,
                                                  expected_mem[i]);
                 if (difference > ram_max_difference)
                     ram_max_difference = difference;
                 if (difference > TOLERANCE) begin
                     if (ram_errors < 20)
-                        $display("RAM A mismatch addr=%0d got=%0d expected=%0d diff=%0d",
-                                 i, ram_a_read_data,
+                        $display("Result RAM mismatch addr=%0d got=%0d expected=%0d diff=%0d",
+                                 i, result_read_data,
                                  expected_mem[i], difference);
                     ram_errors = ram_errors + 1;
                 end
@@ -160,17 +162,17 @@ module tb_cnn_gru;
         if ((stream_checked == OUTPUT_SIZE) &&
             (ram_checked == OUTPUT_SIZE) &&
             (stream_errors == 0) && (ram_errors == 0)) begin
-            $display("PASS: standalone CNN + GRU stored in RAM A.");
+            $display("PASS: standalone CNN + GRU stored in result RAM B.");
             $display("GRU stream checked=%0d max_diff=%0d",
                      stream_checked, stream_max_difference);
-            $display("RAM A checked=%0d max_diff=%0d",
+            $display("Result RAM checked=%0d max_diff=%0d",
                      ram_checked, ram_max_difference);
         end else begin
             $display("FAIL: CNN + GRU integration.");
             $display("Stream checked=%0d errors=%0d max_diff=%0d",
                      stream_checked, stream_errors,
                      stream_max_difference);
-            $display("RAM A checked=%0d errors=%0d max_diff=%0d",
+            $display("Result RAM checked=%0d errors=%0d max_diff=%0d",
                      ram_checked, ram_errors, ram_max_difference);
         end
         $finish;

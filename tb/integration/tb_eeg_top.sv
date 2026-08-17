@@ -36,6 +36,8 @@ module tb_eeg_top;
         .BN1_B_FILE("../mem/weights/bn1_B.mem"),
         .CONV2_W_FILE("../mem/weights/conv2_W.mem"),
         .CONV2_B_FILE("../mem/weights/conv2_b.mem"),
+        .CONV2_PACKED_W_FILE("../mem/weights/conv2_W_x4.mem"),
+        .CONV2_PACKED_B_FILE("../mem/weights/conv2_b_x4.mem"),
         .BN2_A_FILE("../mem/weights/bn2_A.mem"),
         .BN2_B_FILE("../mem/weights/bn2_B.mem"),
         .CONV3_W_FILE("../mem/weights/conv3_W.mem"),
