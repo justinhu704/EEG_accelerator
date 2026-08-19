@@ -151,6 +151,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/maxpool_layer_mem.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/sigmoid_lut.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/tanh_lut.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine_pipeline.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/fc_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/argmax_105.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/eeg_controller.sv

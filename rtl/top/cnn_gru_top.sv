@@ -150,7 +150,9 @@ module cnn_gru_top #(
             ram_a_write_addr = pool2_addr[15:0];
             ram_a_write_data = pool2_data;
         end else begin
-            ram_a_write_addr = {{RAM_ADDR_W - POOL1_ADDR_W}{1'b0}, pool1_addr};
+            ram_a_write_addr = {
+                {(RAM_ADDR_W - POOL1_ADDR_W){1'b0}}, pool1_addr
+            };
             ram_a_write_data = pool1_data;
         end
     end
@@ -267,7 +269,7 @@ module cnn_gru_top #(
         .output_data(pool2_data)
     );
 
-    gru_engine #(
+    gru_engine_pipeline #(
         .WR_FILE(GRU_WR_FILE), .WZ_FILE(GRU_WZ_FILE),
         .WH_FILE(GRU_WH_FILE), .UR_FILE(GRU_UR_FILE),
         .UZ_FILE(GRU_UZ_FILE), .UH_FILE(GRU_UH_FILE),

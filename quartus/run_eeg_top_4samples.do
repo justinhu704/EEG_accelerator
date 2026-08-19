@@ -16,6 +16,7 @@ vlog -sv ../rtl/pooling/streaming_maxpool1.sv
 vlog -sv ../rtl/gru/sigmoid_lut.sv
 vlog -sv ../rtl/gru/tanh_lut.sv
 vlog -sv ../rtl/gru/gru_engine.sv
+vlog -sv ../rtl/gru/gru_engine_pipeline.sv
 vlog -sv ../rtl/fc/fc_engine.sv
 vlog -sv ../rtl/fc/argmax_105.sv
 vlog -sv ../rtl/top/cnn_gru_top.sv
