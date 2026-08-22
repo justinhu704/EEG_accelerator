@@ -135,6 +135,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--limit", type=int, help="send only the first N samples")
     parser.add_argument(
+        "--report-every",
+        type=int,
+        default=100,
+        help="print progress every N samples (default: 100)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="validate files and packets without opening a COM port"
     )
@@ -143,6 +149,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.report_every <= 0:
+        raise ValueError("--report-every must be greater than zero")
     labels = load_labels(args.labels)
     validate_dataset(args.inputs, labels)
     sample_count = len(labels) if args.limit is None else min(args.limit, len(labels))
@@ -226,12 +234,14 @@ def main() -> int:
             )
             output_file.flush()
 
-            running_accuracy = 100.0 * correct_count / (index + 1)
-            print(
-                f"[{index + 1}/{sample_count}] true={label['fpga_label']} "
-                f"pred={prediction} logit={winning_logit} "
-                f"accuracy={running_accuracy:.2f}%"
-            )
+            completed = index + 1
+            if completed % args.report_every == 0 or completed == sample_count:
+                running_accuracy = 100.0 * correct_count / completed
+                print(
+                    f"[{completed}/{sample_count}] true={label['fpga_label']} "
+                    f"pred={prediction} logit={winning_logit} "
+                    f"accuracy={running_accuracy:.2f}%"
+                )
 
     elapsed = time.monotonic() - start_time
     accuracy = 100.0 * correct_count / sample_count

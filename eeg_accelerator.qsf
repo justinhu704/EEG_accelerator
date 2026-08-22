@@ -128,45 +128,6 @@ set_location_assignment PIN_Y21 -to LEDR[9]
 
 
 
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/fpga_uart_top.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_tx.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_sample_loader.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_rx.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_result_sender.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_crc16_ccitt.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_engine.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_engine_parallel.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_controller.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/memory/weight_rom.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/memory/activation_ram.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/bn_relu/bn_affine.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/bn_relu/relu.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage1_top.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage2_top.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage3_top.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_gru_top.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/maxpool_engine.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/streaming_maxpool1.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/maxpool_layer_mem.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/sigmoid_lut.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/tanh_lut.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine_pipeline.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/fc_engine.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/argmax_105.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/eeg_controller.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/eeg_top.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/sample_rom.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/fixed_sample_loader.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/display/binary_to_bcd_7bit.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/display/seven_seg_decoder.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/display/class_to_subject_id.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/fpga_top.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/sat16.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/pe_mac.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/pe_array_21.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/fixed_point_pkg.sv
-set_global_assignment -name SDC_FILE quartus/eeg_accelerator.sdc
 set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
 set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
@@ -183,5 +144,54 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_RXD
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD
 set_location_assignment PIN_Y17 -to UART_RXD
 set_location_assignment PIN_AC18 -to UART_TXD
+
+
+
+set_global_assignment -name POWER_USE_INPUT_FILES OFF
+
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/streaming_maxpool.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/fpga_uart_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_tx.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_sample_loader.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_rx.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_result_sender.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/uart/uart_crc16_ccitt.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_engine_parallel.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_engine_parallel_counter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_engine_parallel_kh2.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_bn_relu_parallel_kh2_block.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/memory/activation_ram_2r1w.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/conv/conv_controller.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/memory/weight_rom.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/memory/activation_ram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/bn_relu/bn_affine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/bn_relu/relu.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage1_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage2_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_stage3_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/cnn_gru_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/maxpool_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/maxpool_layer_mem.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/sigmoid_lut.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/tanh_lut.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine_pipeline.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/fc_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/fc_out_streaming.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/argmax_105.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/eeg_controller.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/eeg_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/sample_rom.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/fixed_sample_loader.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/display/binary_to_bcd_7bit.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/display/seven_seg_decoder.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/display/class_to_subject_id.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/fpga_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/sat16.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/pe_mac.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/pe_array_21.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/common/fixed_point_pkg.sv
+set_global_assignment -name SDC_FILE quartus/eeg_accelerator.sdc
 
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

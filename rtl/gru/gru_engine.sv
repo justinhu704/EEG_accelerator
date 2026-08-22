@@ -214,11 +214,9 @@ module gru_engine #(
 
     // h_new = (1-z)*candidate + z*h_previous, all operands in Q15.
     always_comb begin
-        one_minus_update = 17'sd32768
-                         - $signed({1'b0, update_gate[candidate_neuron]});
+        one_minus_update = 17'sd32768 - $signed({1'b0, update_gate[candidate_neuron]});
         hidden_mix = one_minus_update * $signed(tanh_output)
-                   + $signed({1'b0, update_gate[candidate_neuron]})
-                   * $signed(hidden_state[candidate_neuron]);
+            + $signed({1'b0, update_gate[candidate_neuron]}) * $signed(hidden_state[candidate_neuron]);
         hidden_scaled = hidden_mix >>> 15;
         hidden_result = saturate16(hidden_scaled);
     end
@@ -279,6 +277,7 @@ module gru_engine #(
                     state <= S_LOAD_X;
                 end
 
+                // 將15個 feature load 到 register，一筆 mac 需要15個 feature
                 S_LOAD_X: begin
                     load_data_valid <= 1'b1;
                     if (load_data_valid) begin
@@ -301,21 +300,19 @@ module gru_engine #(
                     state <= S_GATE_CLEAR;
                 end
 
+                // =============================================================
+                // accumulators 填入 bias
                 S_GATE_CLEAR: begin
-                    // Gate accumulators use common F30.
                     reset_accumulator <= $signed(br_mem[gate_neuron]) <<< 15;
                     update_accumulator <= $signed(bz_mem[gate_neuron]) <<< 15;
                     feature_index <= 0;
                     state <= S_GATE_INPUT;
                 end
 
+                // 與 Wr Wz 做 mac
                 S_GATE_INPUT: begin
-                    // Reset: x(F13)*Wr(F15)=F28, align to F30.
-                    // Update: x(F13)*Wz(F14)=F27, align to F30.
-                    reset_accumulator <= reset_accumulator
-                                       + ($signed(wr_product) <<< 2);
-                    update_accumulator <= update_accumulator
-                                        + ($signed(wz_product) <<< 3);
+                    reset_accumulator <= reset_accumulator + ($signed(wr_product) <<< 2);
+                    update_accumulator <= update_accumulator + ($signed(wz_product) <<< 3);
                     if (feature_index == INPUT_SIZE-1) begin
                         recurrent_index <= 0;
                         state <= S_GATE_RECURRENT;
@@ -324,12 +321,10 @@ module gru_engine #(
                     end
                 end
 
+                // 與遞迴權重 Ur Uz 做 mac
                 S_GATE_RECURRENT: begin
-                    // Ur and Uz are both F15 => h(F15)*U is F30.
-                    reset_accumulator <= reset_accumulator
-                                       + $signed(ur_product);
-                    update_accumulator <= update_accumulator
-                                        + $signed(uz_product);
+                    reset_accumulator <= reset_accumulator + $signed(ur_product);
+                    update_accumulator <= update_accumulator + $signed(uz_product);
                     if (recurrent_index == HIDDEN_SIZE-1)
                         state <= S_GATE_LUT;
                     else
@@ -339,6 +334,7 @@ module gru_engine #(
                 S_GATE_LUT:
                     state <= S_GATE_WAIT;
 
+                // 儲存sigmoid 計算結果，並迴圈九次
                 S_GATE_WAIT: begin
                     if (reset_lut_valid && update_lut_valid) begin
                         reset_gate[gate_neuron] <= reset_lut_output;
@@ -353,18 +349,17 @@ module gru_engine #(
                     end
                 end
 
+                // =============================================================
+                // accumulators 填入 bias
                 S_CAND_CLEAR: begin
-                    // Candidate accumulator uses F44.
-                    candidate_accumulator <=
-                        $signed(bh_mem[candidate_neuron]) <<< 29;
+                    candidate_accumulator <= $signed(bh_mem[candidate_neuron]) <<< 29;
                     feature_index <= 0;
                     state <= S_CAND_INPUT;
                 end
 
                 S_CAND_INPUT: begin
                     // x(F13)*Wh(F15)=F28, align to F44.
-                    candidate_accumulator <= candidate_accumulator
-                                           + ($signed(wh_product) <<< 16);
+                    candidate_accumulator <= candidate_accumulator + ($signed(wh_product) <<< 16);
                     if (feature_index == INPUT_SIZE-1) begin
                         recurrent_index <= 0;
                         state <= S_CAND_GATE_H;
@@ -373,8 +368,8 @@ module gru_engine #(
                     end
                 end
 
-                // Register r*h before multiplying by Uh. This avoids a
-                // two-multiplier combinational path in FPGA synthesis.
+                // Register r*h before multiplying by Uh.
+                // 做 pipeline
                 S_CAND_GATE_H: begin
                     gated_hidden_register <= gated_hidden_product;
                     state <= S_CAND_RECURRENT;
@@ -382,8 +377,7 @@ module gru_engine #(
 
                 S_CAND_RECURRENT: begin
                     // Uh(F14) * r(F15) * h(F15) is already F44.
-                    candidate_accumulator <= candidate_accumulator
-                                           + $signed(uh_product);
+                    candidate_accumulator <= candidate_accumulator + $signed(uh_product);
                     if (recurrent_index == HIDDEN_SIZE-1)
                         state <= S_CAND_LUT;
                     else begin
@@ -392,6 +386,7 @@ module gru_engine #(
                     end
                 end
 
+                // send to tanh LUT
                 S_CAND_LUT:
                     state <= S_CAND_WAIT;
 
@@ -399,8 +394,7 @@ module gru_engine #(
                     if (tanh_out_valid) begin
                         hidden_next[candidate_neuron] <= hidden_result;
                         output_valid <= 1'b1;
-                        output_addr <= candidate_neuron
-                                     + HIDDEN_SIZE * time_index;
+                        output_addr <= candidate_neuron + HIDDEN_SIZE * time_index;
                         output_data <= hidden_result;
 
                         if (candidate_neuron == HIDDEN_SIZE-1) begin

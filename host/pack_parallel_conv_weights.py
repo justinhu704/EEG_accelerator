@@ -40,6 +40,11 @@ def main() -> None:
     parser.add_argument("--in-ch", type=int, default=21)
     parser.add_argument("--out-ch", type=int, default=20)
     parser.add_argument("--lanes", type=int, default=4)
+    parser.add_argument(
+        "--pair-kh", action="store_true",
+        help=("pack kh=0 and kh=1 into one double-width ROM word; "
+              "the KH2 engine requires --kh 2")
+    )
     args = parser.parse_args()
 
     if args.lanes <= 0:
@@ -62,15 +67,40 @@ def main() -> None:
     packed_weights: list[str] = []
     packed_biases: list[str] = []
 
+    if args.pair_kh and args.kh != 2:
+        raise ValueError("--pair-kh currently requires --kh 2")
+
     for group in range(groups):
         base_channel = group * args.lanes
-        for kernel_index in range(kernel_size):
-            lane_values = []
-            for lane in range(args.lanes):
-                channel = base_channel + lane
-                value = weights[kernel_index + kernel_size * channel] if channel < args.out_ch else 0
-                lane_values.append(value)
-            packed_weights.append(pack_lanes(lane_values, args.lanes))
+        if args.pair_kh:
+            # Scalar MATLAB export order is kh -> kw -> input channel for
+            # each output channel.  Keep kh=0 in the low LANES words and
+            # kh=1 in the high LANES words so both kernel rows are available
+            # to the KH2 engine in the same clock.
+            for input_channel in range(args.in_ch):
+                for kernel_width in range(args.kw):
+                    lane_values = []
+                    for kernel_height in range(2):
+                        kernel_index = (
+                            kernel_height
+                            + args.kh * (kernel_width + args.kw * input_channel)
+                        )
+                        for lane in range(args.lanes):
+                            channel = base_channel + lane
+                            value = (
+                                weights[kernel_index + kernel_size * channel]
+                                if channel < args.out_ch else 0
+                            )
+                            lane_values.append(value)
+                    packed_weights.append(pack_lanes(lane_values, 2 * args.lanes))
+        else:
+            for kernel_index in range(kernel_size):
+                lane_values = []
+                for lane in range(args.lanes):
+                    channel = base_channel + lane
+                    value = weights[kernel_index + kernel_size * channel] if channel < args.out_ch else 0
+                    lane_values.append(value)
+                packed_weights.append(pack_lanes(lane_values, args.lanes))
 
         packed_biases.append(pack_lanes([
             biases[base_channel + lane] if base_channel + lane < args.out_ch else 0
@@ -84,7 +114,7 @@ def main() -> None:
 
     print(
         f"Packed {len(weights)} weights into {len(packed_weights)} "
-        f"x {args.lanes * 16}-bit words"
+        f"x {args.lanes * (32 if args.pair_kh else 16)}-bit words"
     )
     print(
         f"Packed {len(biases)} biases into {len(packed_biases)} "

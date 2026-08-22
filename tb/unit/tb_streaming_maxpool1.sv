@@ -24,7 +24,7 @@ module tb_streaming_maxpool1;
     logic signed [15:0] input_data = '0;
 
     logic output_valid;
-    logic [31:0] output_addr;
+    logic [12:0] output_addr;
     logic signed [15:0] output_data;
 
     logic signed [15:0] input_mem    [0:INPUT_SIZE-1];

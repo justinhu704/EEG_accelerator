@@ -30,13 +30,7 @@ vlog -sv ../rtl/fc/argmax_105.sv
 vlog -sv ../rtl/top/cnn_gru_top.sv
 vlog -sv ../rtl/top/eeg_controller.sv
 vlog -sv ../rtl/top/eeg_top.sv
-vlog -sv ../rtl/board/sample_rom.sv
-vlog -sv ../rtl/board/fixed_sample_loader.sv
-vlog -sv ../rtl/display/binary_to_bcd_7bit.sv
-vlog -sv ../rtl/display/seven_seg_decoder.sv
-vlog -sv ../rtl/display/class_to_subject_id.sv
-vlog -sv ../rtl/board/fpga_top.sv
-vlog -sv ../tb/integration/tb_fpga_top.sv
+vlog -sv ../tb/integration/tb_eeg_cycle_count.sv
 
-vsim work.tb_fpga_top
+vsim work.tb_eeg_cycle_count
 run -all

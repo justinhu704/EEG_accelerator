@@ -114,8 +114,6 @@ module fc_engine #(
         output_data = output_valid ? saturated_result : 16'sd0;
     end
 
-    // Both the activation RAM and weight ROM have one-clock read latency.
-    // data_valid marks the value returned for the preceding issued address.
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= S_IDLE;

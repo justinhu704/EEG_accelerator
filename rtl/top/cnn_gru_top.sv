@@ -3,23 +3,27 @@
 //
 // RAM A -> Conv1/BN1/ReLU1                   -> RAM B
 // RAM B -> Conv2/BN2/ReLU2/streaming Pool1   -> RAM A
-// RAM A -> Conv3/BN3/ReLU3                   -> RAM B
-// RAM B -> Pool2                             -> RAM A
-// RAM A -> GRU                               -> RAM B
+// RAM A -> Conv3/BN3/ReLU3/streaming Pool2   -> RAM B
+// RAM B -> GRU                               -> RAM A
 module cnn_gru_top #(
     parameter INPUT_FILE   = "mem/golden/q_in_act.mem",
     parameter CONV1_W_FILE = "mem/weights/conv1_W.mem",
     parameter CONV1_B_FILE = "mem/weights/conv1_b.mem",
+    parameter CONV1_PACKED_W_FILE = "mem/weights/conv1_W_x3.mem",
+    parameter CONV1_PACKED_B_FILE = "mem/weights/conv1_b_x3.mem",
     parameter BN1_A_FILE   = "mem/weights/bn1_A.mem",
     parameter BN1_B_FILE   = "mem/weights/bn1_B.mem",
     parameter CONV2_W_FILE = "mem/weights/conv2_W.mem",
     parameter CONV2_B_FILE = "mem/weights/conv2_b.mem",
-    parameter CONV2_PACKED_W_FILE = "mem/weights/conv2_W_x4.mem",
-    parameter CONV2_PACKED_B_FILE = "mem/weights/conv2_b_x4.mem",
+    parameter CONV2_PACKED_W_FILE = "mem/weights/conv2_W_x5.mem",
+    parameter CONV2_KH2_PACKED_W_FILE = "mem/weights/conv2_W_x5_kh2.mem",
+    parameter CONV2_PACKED_B_FILE = "mem/weights/conv2_b_x5.mem",
     parameter BN2_A_FILE   = "mem/weights/bn2_A.mem",
     parameter BN2_B_FILE   = "mem/weights/bn2_B.mem",
     parameter CONV3_W_FILE = "mem/weights/conv3_W.mem",
     parameter CONV3_B_FILE = "mem/weights/conv3_b.mem",
+    parameter CONV3_PACKED_W_FILE = "mem/weights/conv3_W_x3.mem",
+    parameter CONV3_PACKED_B_FILE = "mem/weights/conv3_b_x3.mem",
     parameter BN3_A_FILE   = "mem/weights/bn3_A.mem",
     parameter BN3_B_FILE   = "mem/weights/bn3_B.mem",
     parameter GRU_WR_FILE  = "mem/weights/gru_Wr.mem",
@@ -52,7 +56,7 @@ module cnn_gru_top #(
     output logic [31:0]        output_addr,
     output logic signed [15:0] output_data,
 
-    // Final GRU results occupy result RAM (RAM B) addresses 0..161.
+    // Final GRU results occupy result RAM (RAM A) addresses 0..161.
     input  logic [15:0]        result_read_addr,
     output logic signed [15:0] result_read_data
 );
@@ -61,8 +65,6 @@ module cnn_gru_top #(
     localparam int RAM_ADDR_W = 16;
     localparam int POOL1_ADDR_W = 13;
     localparam int CONV1_SIZE = 20 * 156 * 21;
-    localparam int CONV3_SIZE = 18 * 14 * 15;
-    localparam int POOL2_SIZE = 18 * 1 * 15;
 
     typedef enum logic [3:0] {
         S_IDLE,
@@ -71,8 +73,6 @@ module cnn_gru_top #(
         S_RUN_CONV2,
         S_START_CONV3,
         S_RUN_CONV3,
-        S_START_POOL2,
-        S_RUN_POOL2,
         S_START_GRU,
         S_RUN_GRU,
         S_DONE
@@ -83,17 +83,17 @@ module cnn_gru_top #(
     logic [31:0] conv1_input_addr, conv1_addr;
     logic signed [15:0] conv1_data;
     logic conv2_start, conv2_busy, conv2_valid;
-    logic [31:0] conv2_input_addr, conv2_addr;
+    logic [31:0] conv2_input_addr, conv2_input_addr_kh1, conv2_addr;
     logic signed [15:0] conv2_data;
     logic conv3_start, conv3_busy, conv3_valid;
     logic [31:0] conv3_input_addr, conv3_addr;
     logic signed [15:0] conv3_data;
 
     logic pool1_start, pool1_busy, pool1_done, pool1_valid;
-    logic [31:0] pool1_addr;
+    logic [12:0] pool1_addr;
     logic signed [15:0] pool1_data;
     logic pool2_start, pool2_busy, pool2_done, pool2_valid;
-    logic [31:0] pool2_input_addr, pool2_addr;
+    logic [12:0] pool2_addr;
     logic signed [15:0] pool2_data;
 
     logic gru_start, gru_busy, gru_done, gru_valid;
@@ -103,10 +103,12 @@ module cnn_gru_top #(
     logic [RAM_ADDR_W-1:0] ram_a_internal_read_addr;
     logic [RAM_ADDR_W-1:0] ram_b_internal_read_addr;
     logic signed [15:0] ram_a_read_data;
-    logic signed [15:0] ram_b_read_data;
+    logic signed [15:0] ram_b_read_data, ram_b_read_data_kh1;
     logic ram_a_write_en, ram_b_write_en;
     logic [RAM_ADDR_W-1:0] ram_a_write_addr, ram_b_write_addr;
     logic signed [15:0] ram_a_write_data, ram_b_write_data;
+    logic [RAM_ADDR_W-1:0] ram_b_port_a_addr;
+    logic [RAM_ADDR_W-1:0] ram_b_port_b_addr;
 
     always_comb begin
         conv1_start = (state == S_IDLE) && start;
@@ -114,41 +116,47 @@ module cnn_gru_top #(
         // Conv2 與 maxpool1 同步
         pool1_start = conv2_start;
         conv3_start = (state == S_START_CONV3);
-        pool2_start = (state == S_START_POOL2);
+        // Conv3 and Pool2 start together so Pool2 can consume the live
+        // ReLU3 stream. Starting Pool2 after Conv3 would lose that stream.
+        pool2_start = conv3_start;
         gru_start = (state == S_START_GRU);
     end
 
     // Select which engine owns each synchronous RAM read port.
     always_comb begin
-        if ((state == S_START_GRU) || (state == S_RUN_GRU))
-            ram_a_internal_read_addr = gru_input_addr[15:0];
-        else if ((state == S_START_CONV3) || (state == S_RUN_CONV3))
+        if ((state == S_START_CONV3) || (state == S_RUN_CONV3))
             ram_a_internal_read_addr = conv3_input_addr[15:0];
         else if (state == S_RUN_CONV1)
             ram_a_internal_read_addr = conv1_input_addr[15:0];
         else
-            ram_a_internal_read_addr = '0;
+            ram_a_internal_read_addr = result_read_addr;
 
-        if ((state == S_START_POOL2) || (state == S_RUN_POOL2))
-            ram_b_internal_read_addr = pool2_input_addr[15:0];
+        if ((state == S_START_GRU) || (state == S_RUN_GRU))
+            ram_b_internal_read_addr = gru_input_addr[15:0];
         else if ((state == S_START_CONV2) || (state == S_RUN_CONV2))
             ram_b_internal_read_addr = conv2_input_addr[15:0];
         else
-            ram_b_internal_read_addr = result_read_addr;
+            ram_b_internal_read_addr = '0;
+
+        if ((state == S_START_CONV2) || (state == S_RUN_CONV2))
+            ram_b_port_b_addr = conv2_input_addr_kh1[15:0];
+        else
+            ram_b_port_b_addr = '0;
     end
 
     // =======================================
-    // RAM A destinations: external EEG loader, streaming Pool1, and Pool2.
+    // RAM A destinations: external EEG loader, streaming Pool1, and final
+    // GRU results. Pool2 cannot write here while Conv3 reads the Pool1 tensor.
     // =======================================
     always_comb begin
         ram_a_write_en = (input_ready && input_write_en) ||
-                         pool1_valid || pool2_valid;
-        if (input_ready && input_write_en) begin
+                         pool1_valid || gru_valid;
+        if (gru_valid) begin
+            ram_a_write_addr = gru_addr[15:0];
+            ram_a_write_data = gru_data;
+        end else if (input_ready && input_write_en) begin
             ram_a_write_addr = {{(RAM_ADDR_W-12){1'b0}}, input_write_addr};
             ram_a_write_data = input_write_data;
-        end else if (pool2_valid) begin
-            ram_a_write_addr = pool2_addr[15:0];
-            ram_a_write_data = pool2_data;
         end else begin
             ram_a_write_addr = {
                 {(RAM_ADDR_W - POOL1_ADDR_W){1'b0}}, pool1_addr
@@ -158,16 +166,16 @@ module cnn_gru_top #(
     end
 
     // =======================================
-    // RAM B destinations: ReLU1, ReLU3, and final GRU results.
+    // RAM B destinations: ReLU1 and streaming Pool2.
+    // ReLU1 is no longer needed when Pool2 starts, so Pool2 safely reuses it.
     // =======================================
     always_comb begin
-        ram_b_write_en = conv1_valid || conv3_valid || gru_valid;
-        if (gru_valid) begin
-            ram_b_write_addr = gru_addr[15:0];
-            ram_b_write_data = gru_data;
-        end else if (conv3_valid) begin
-            ram_b_write_addr = conv3_addr[15:0];
-            ram_b_write_data = conv3_data;
+        ram_b_write_en = conv1_valid || pool2_valid;
+        if (pool2_valid) begin
+            ram_b_write_addr = {
+                {(RAM_ADDR_W - 13){1'b0}}, pool2_addr
+            };
+            ram_b_write_data = pool2_data;
         end else begin
             ram_b_write_addr = conv1_addr[15:0];
             ram_b_write_data = conv1_data;
@@ -184,25 +192,38 @@ module cnn_gru_top #(
         .read_addr(ram_a_internal_read_addr), .read_data(ram_a_read_data)
     );
 
-    activation_ram #(
+    // Port A writes ReLU1/Pool2 when requested and otherwise serves the
+    // ordinary RAM-B read. Port B supplies Conv2's simultaneous kh=1 read.
+    always_comb begin
+        if (ram_b_write_en)
+            ram_b_port_a_addr = ram_b_write_addr;
+        else
+            ram_b_port_a_addr = ram_b_internal_read_addr;
+    end
+
+    activation_ram_2r1w #(
         .DATA_W(16), .DEPTH(RAM_B_DEPTH), .ADDR_W(RAM_ADDR_W),
         .MEM_FILE("")
     ) u_ram_b (
         .clk(clk),
-        .write_en(ram_b_write_en),
-        .write_addr(ram_b_write_addr), .write_data(ram_b_write_data),
-        .read_addr(ram_b_internal_read_addr), .read_data(ram_b_read_data)
+        .port_a_write_en(ram_b_write_en),
+        .port_a_addr(ram_b_port_a_addr),
+        .port_a_write_data(ram_b_write_data),
+        .port_a_read_data(ram_b_read_data),
+        .port_b_read_addr(ram_b_port_b_addr),
+        .port_b_read_data(ram_b_read_data_kh1)
     );
 
-    assign result_read_data = ram_b_read_data;
+    assign result_read_data = ram_a_read_data;
 
-    conv_bn_relu_block #(
+    conv_bn_relu_parallel_block #(
         .IN_H(21), .IN_W(160), .IN_CH(1),
-        .K_H(2), .K_W(5), .OUT_CH(21),
+        .K_H(2), .K_W(5), .OUT_CH(21), .LANES(3),
         .CONV_BIAS_SHIFT(12), .CONV_OUTPUT_SHIFT(14),
         .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(13),
         .RELU_LEFT_SHIFT(0),
-        .WEIGHT_FILE(CONV1_W_FILE), .BIAS_FILE(CONV1_B_FILE),
+        .PACKED_WEIGHT_FILE(CONV1_PACKED_W_FILE),
+        .PACKED_BIAS_FILE(CONV1_PACKED_B_FILE),
         .BN_A_FILE(BN1_A_FILE), .BN_B_FILE(BN1_B_FILE)
     ) u_conv1_bn_relu (
         .clk(clk), .rst_n(rst_n), .start(conv1_start),
@@ -212,26 +233,30 @@ module cnn_gru_top #(
         .output_data(conv1_data)
     );
 
-    conv_bn_relu_parallel_block #(
+    conv_bn_relu_parallel_kh2_block #(
         .IN_H(20), .IN_W(156), .IN_CH(21),
-        .K_H(2), .K_W(5), .OUT_CH(20), .LANES(4),
+        .K_H(2), .K_W(5), .OUT_CH(20), .LANES(5),
         .CONV_BIAS_SHIFT(10), .CONV_OUTPUT_SHIFT(15),
         .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(14),
         .RELU_LEFT_SHIFT(1),
-        .PACKED_WEIGHT_FILE(CONV2_PACKED_W_FILE),
+        .PACKED_WEIGHT_FILE(CONV2_KH2_PACKED_W_FILE),
         .PACKED_BIAS_FILE(CONV2_PACKED_B_FILE),
         .BN_A_FILE(BN2_A_FILE), .BN_B_FILE(BN2_B_FILE)
     ) u_conv2_bn_relu (
         .clk(clk), .rst_n(rst_n), .start(conv2_start),
         .busy(conv2_busy),
-        .input_addr(conv2_input_addr), .input_data(ram_b_read_data),
+        .input_addr_kh0(conv2_input_addr),
+        .input_addr_kh1(conv2_input_addr_kh1),
+        .input_data_kh0(ram_b_read_data),
+        .input_data_kh1(ram_b_read_data_kh1),
         .output_valid(conv2_valid), .output_addr(conv2_addr),
         .output_data(conv2_data)
     );
 
-    streaming_maxpool1 #(
+    streaming_maxpool #(
         .IN_H(19), .IN_W(152), .IN_CH(20),
-        .POOL_W(10), .STRIDE_W(8), .LANES(4)
+        .POOL_W(10), .STRIDE_W(8), .LANES(5),
+        .INPUT_F(13), .OUTPUT_F(13)
     ) u_pool1 (
         .clk(clk), .rst_n(rst_n), .start(pool1_start),
         .busy(pool1_busy), .done(pool1_done),
@@ -240,13 +265,14 @@ module cnn_gru_top #(
         .output_data(pool1_data)
     );
 
-    conv_bn_relu_block #(
+    conv_bn_relu_parallel_block #(
         .IN_H(19), .IN_W(18), .IN_CH(20),
-        .K_H(2), .K_W(5), .OUT_CH(15),
+        .K_H(2), .K_W(5), .OUT_CH(15), .LANES(3),
         .CONV_BIAS_SHIFT(12), .CONV_OUTPUT_SHIFT(17),
         .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(13),
         .RELU_LEFT_SHIFT(0),
-        .WEIGHT_FILE(CONV3_W_FILE), .BIAS_FILE(CONV3_B_FILE),
+        .PACKED_WEIGHT_FILE(CONV3_PACKED_W_FILE),
+        .PACKED_BIAS_FILE(CONV3_PACKED_B_FILE),
         .BN_A_FILE(BN3_A_FILE), .BN_B_FILE(BN3_B_FILE)
     ) u_conv3_bn_relu (
         .clk(clk), .rst_n(rst_n), .start(conv3_start),
@@ -256,15 +282,14 @@ module cnn_gru_top #(
         .output_data(conv3_data)
     );
 
-    maxpool_engine #(
+    streaming_maxpool #(
         .IN_H(18), .IN_W(14), .IN_CH(15),
-        .POOL_H(1), .POOL_W(10),
-        .STRIDE_H(1), .STRIDE_W(8),
+        .POOL_W(10), .STRIDE_W(8), .LANES(3),
         .INPUT_F(12), .OUTPUT_F(13)
     ) u_pool2 (
         .clk(clk), .rst_n(rst_n), .start(pool2_start),
         .busy(pool2_busy), .done(pool2_done),
-        .input_addr(pool2_input_addr), .input_data(ram_b_read_data),
+        .input_valid(conv3_valid), .input_data(conv3_data),
         .output_valid(pool2_valid), .output_addr(pool2_addr),
         .output_data(pool2_data)
     );
@@ -279,7 +304,7 @@ module cnn_gru_top #(
     ) u_gru (
         .clk(clk), .rst_n(rst_n), .start(gru_start),
         .busy(gru_busy), .done(gru_done),
-        .input_addr(gru_input_addr), .input_data(ram_a_read_data),
+        .input_addr(gru_input_addr), .input_data(ram_b_read_data),
         .output_valid(gru_valid), .output_addr(gru_addr),
         .output_data(gru_data)
     );
@@ -306,12 +331,9 @@ module cnn_gru_top #(
                 S_START_CONV3:
                     state <= S_RUN_CONV3;
                 S_RUN_CONV3:
-                    if (conv3_valid && (conv3_addr == CONV3_SIZE-1))
-                        state <= S_START_POOL2;
-                S_START_POOL2:
-                    state <= S_RUN_POOL2;
-                S_RUN_POOL2:
-                    if (pool2_valid && (pool2_addr == POOL2_SIZE-1))
+                    // pool2_done is asserted only after the complete ReLU3
+                    // stream has passed through the synchronous max buffer.
+                    if (pool2_done)
                         state <= S_START_GRU;
                 S_START_GRU:
                     state <= S_RUN_GRU;
@@ -470,8 +492,8 @@ module conv_bn_relu_parallel_block #(
     parameter int BN_BIAS_SHIFT     = 11,
     parameter int BN_OUTPUT_SHIFT   = 14,
     parameter int RELU_LEFT_SHIFT   = 1,
-    parameter PACKED_WEIGHT_FILE = "mem/weights/conv2_W_x4.mem",
-    parameter PACKED_BIAS_FILE   = "mem/weights/conv2_b_x4.mem",
+    parameter PACKED_WEIGHT_FILE = "mem/weights/conv2_W_x5.mem",
+    parameter PACKED_BIAS_FILE   = "mem/weights/conv2_b_x5.mem",
     parameter BN_A_FILE          = "mem/weights/bn2_A.mem",
     parameter BN_B_FILE          = "mem/weights/bn2_B.mem"
 ) (
@@ -519,7 +541,7 @@ module conv_bn_relu_parallel_block #(
         .data(packed_bias_data)
     );
 
-    conv_engine_parallel #(
+    conv_engine_parallel_counter #(
         .IN_H(IN_H), .IN_W(IN_W), .IN_CH(IN_CH),
         .K_H(K_H), .K_W(K_W), .OUT_CH(OUT_CH),
         .OUT_H(OUT_H), .OUT_W(OUT_W), .LANES(LANES),

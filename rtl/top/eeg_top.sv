@@ -4,16 +4,21 @@ module eeg_top #(
     parameter INPUT_FILE   = "mem/golden/q_in_act.mem",
     parameter CONV1_W_FILE = "mem/weights/conv1_W.mem",
     parameter CONV1_B_FILE = "mem/weights/conv1_b.mem",
+    parameter CONV1_PACKED_W_FILE = "mem/weights/conv1_W_x3.mem",
+    parameter CONV1_PACKED_B_FILE = "mem/weights/conv1_b_x3.mem",
     parameter BN1_A_FILE   = "mem/weights/bn1_A.mem",
     parameter BN1_B_FILE   = "mem/weights/bn1_B.mem",
     parameter CONV2_W_FILE = "mem/weights/conv2_W.mem",
     parameter CONV2_B_FILE = "mem/weights/conv2_b.mem",
-    parameter CONV2_PACKED_W_FILE = "mem/weights/conv2_W_x4.mem",
-    parameter CONV2_PACKED_B_FILE = "mem/weights/conv2_b_x4.mem",
+    parameter CONV2_PACKED_W_FILE = "mem/weights/conv2_W_x5.mem",
+    parameter CONV2_KH2_PACKED_W_FILE = "mem/weights/conv2_W_x5_kh2.mem",
+    parameter CONV2_PACKED_B_FILE = "mem/weights/conv2_b_x5.mem",
     parameter BN2_A_FILE   = "mem/weights/bn2_A.mem",
     parameter BN2_B_FILE   = "mem/weights/bn2_B.mem",
     parameter CONV3_W_FILE = "mem/weights/conv3_W.mem",
     parameter CONV3_B_FILE = "mem/weights/conv3_b.mem",
+    parameter CONV3_PACKED_W_FILE = "mem/weights/conv3_W_x3.mem",
+    parameter CONV3_PACKED_B_FILE = "mem/weights/conv3_b_x3.mem",
     parameter BN3_A_FILE   = "mem/weights/bn3_A.mem",
     parameter BN3_B_FILE   = "mem/weights/bn3_B.mem",
     parameter GRU_WR_FILE  = "mem/weights/gru_Wr.mem",
@@ -79,10 +84,7 @@ module eeg_top #(
     logic fc_addr_valid_d1;
     logic fc1_bn_done;
 
-    logic [5:0] fc_buffer_read_addr;
-    logic signed [15:0] fc_buffer_read_data;
-
-    logic [31:0] fc_out_input_addr, fc_out_output_addr;
+    logic [6:0] fc_out_output_addr;
     logic signed [15:0] fc_out_output_data;
     logic fc_out_output_valid;
 
@@ -96,16 +98,21 @@ module eeg_top #(
     );
 
     // This contains both activation RAMs and the complete CNN/GRU path.
-    // Result RAM B addresses 0..161 hold the flattened GRU result.
+    // Result RAM A addresses 0..161 hold the flattened GRU result.
     cnn_gru_top #(
         .INPUT_FILE(INPUT_FILE),
         .CONV1_W_FILE(CONV1_W_FILE), .CONV1_B_FILE(CONV1_B_FILE),
+        .CONV1_PACKED_W_FILE(CONV1_PACKED_W_FILE),
+        .CONV1_PACKED_B_FILE(CONV1_PACKED_B_FILE),
         .BN1_A_FILE(BN1_A_FILE), .BN1_B_FILE(BN1_B_FILE),
         .CONV2_W_FILE(CONV2_W_FILE), .CONV2_B_FILE(CONV2_B_FILE),
         .CONV2_PACKED_W_FILE(CONV2_PACKED_W_FILE),
+        .CONV2_KH2_PACKED_W_FILE(CONV2_KH2_PACKED_W_FILE),
         .CONV2_PACKED_B_FILE(CONV2_PACKED_B_FILE),
         .BN2_A_FILE(BN2_A_FILE), .BN2_B_FILE(BN2_B_FILE),
         .CONV3_W_FILE(CONV3_W_FILE), .CONV3_B_FILE(CONV3_B_FILE),
+        .CONV3_PACKED_W_FILE(CONV3_PACKED_W_FILE),
+        .CONV3_PACKED_B_FILE(CONV3_PACKED_B_FILE),
         .BN3_A_FILE(BN3_A_FILE), .BN3_B_FILE(BN3_B_FILE),
         .GRU_WR_FILE(GRU_WR_FILE), .GRU_WZ_FILE(GRU_WZ_FILE),
         .GRU_WH_FILE(GRU_WH_FILE), .GRU_UR_FILE(GRU_UR_FILE),
@@ -175,32 +182,24 @@ module eeg_top #(
 
     assign fc1_bn_done = fc_bn_valid && (fc_addr_d2 == 32'd39);
 
-    // FC1's 40 post-BN values must be retained because every FC_out neuron
-    // reads all 40 of them.
-    assign fc_buffer_read_addr = fc_out_input_addr[5:0];
-    activation_ram #(
-        .DATA_W(16), .DEPTH(40), .ADDR_W(6), .MEM_FILE("")
-    ) u_fc_buffer (
-        .clk(clk),
-        .write_en(fc_bn_valid), .write_addr(fc_addr_d2[5:0]),
-        .write_data(fc_bn_data),
-        .read_addr(fc_buffer_read_addr), .read_data(fc_buffer_read_data)
-    );
-
-    fc_engine #(
+    // Stream each FC1/BN result directly into FC_out. FC1 produces one value
+    // about every 162 MAC clocks, allowing this engine to update all 105
+    // class accumulators before the next BN value arrives.
+    fc_out_streaming #(
         .INPUT_SIZE(40), .OUTPUT_SIZE(105),
         .BIAS_SHIFT(12), .OUTPUT_SHIFT(17),
         .WEIGHT_FILE(FC_OUT_W_FILE), .BIAS_FILE(FC_OUT_B_FILE)
     ) u_fc_out (
-        .clk(clk), .rst_n(rst_n), .start(fc_out_start),
+        .clk(clk), .rst_n(rst_n), .start(fc1_start),
         .busy(), .done(fc_out_done),
-        .input_addr(fc_out_input_addr), .input_data(fc_buffer_read_data),
+        .input_valid(fc_bn_valid), .input_index(fc_addr_d2[5:0]),
+        .input_data(fc_bn_data),
         .output_valid(fc_out_output_valid),
         .output_addr(fc_out_output_addr), .output_data(fc_out_output_data)
     );
 
     // Store logits for debug/readback while simultaneously scanning them.
-    activation_ram #(
+    /*activation_ram #(
         .DATA_W(16), .DEPTH(105), .ADDR_W(7), .MEM_FILE("")
     ) u_logit_ram (
         .clk(clk),
@@ -208,17 +207,17 @@ module eeg_top #(
         .write_addr(fc_out_output_addr[6:0]),
         .write_data(fc_out_output_data),
         .read_addr(logit_read_addr), .read_data(logit_read_data)
-    );
+    );*/
 
     argmax_105 u_argmax (
         .clk(clk), .rst_n(rst_n), .start(argmax_start),
         .in_valid(fc_out_output_valid),
-        .in_index(fc_out_output_addr[6:0]), .in_data(fc_out_output_data),
+        .in_index(fc_out_output_addr), .in_data(fc_out_output_data),
         .busy(), .done(argmax_done),
         .class_index(class_index), .max_value(winning_logit)
     );
 
     assign logit_valid = fc_out_output_valid;
-    assign logit_index = fc_out_output_addr[6:0];
+    assign logit_index = fc_out_output_addr;
     assign logit_data  = fc_out_output_data;
 endmodule
