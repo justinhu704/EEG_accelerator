@@ -7,7 +7,7 @@ Run. Alternatively, call the function directly:
 
 ```matlab
 export_uart_dataset( ...
-    "C:\Users\justi\OneDrive\文件\MATLAB\EEG_Hardware_preVerilog\EEG_105_stride10_mixedSess.mat", ...
+    "C:\...\EEG_105_stride10_mixedSess.mat", ...
     "C:\EEG_Project\host\data");
 ```
 
@@ -23,8 +23,8 @@ python host\send_eeg_uart.py --dry-run
 
 ```powershell
 python -m pip install -r host\requirements.txt
-python host\send_eeg_uart.py --port COM5 --baud 115200
+python host\send_eeg_uart.py --port COM10 --baud 921600
 ```
 
-Replace `COM5` with the USB-to-UART COM port shown by Windows Device Manager.
+Replace `COM10` with the USB-to-UART COM port shown by Windows Device Manager.
 The script sends only one sample at a time and waits for its FPGA response.
