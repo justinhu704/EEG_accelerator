@@ -7,6 +7,12 @@ module tb_conv1_banked_ram;
     logic write_en;
     logic [ADDR_W-1:0] write_addr;
     logic signed [15:0] write_data;
+    logic pool2_write_en;
+    logic [8:0] pool2_write_addr;
+    logic signed [15:0] pool2_write_data;
+    logic gru_read_mode;
+    logic [8:0] gru_read_addr;
+    logic signed [15:0] gru_read_data;
     logic [ADDR_W-1:0] read_addr_kh0, read_addr_kh1;
     logic signed [15:0] read_data_kh0, read_data_kh1;
     integer errors;
@@ -21,6 +27,12 @@ module tb_conv1_banked_ram;
         .write_en(write_en),
         .write_logical_addr(write_addr),
         .write_q11_data(write_data),
+        .pool2_write_en(pool2_write_en),
+        .pool2_write_addr(pool2_write_addr),
+        .pool2_write_data(pool2_write_data),
+        .gru_read_mode(gru_read_mode),
+        .gru_read_addr(gru_read_addr),
+        .gru_read_data(gru_read_data),
         .read_logical_addr_kh0(read_addr_kh0),
         .read_logical_addr_kh1(read_addr_kh1),
         .read_q11_data_kh0(read_data_kh0),
@@ -41,6 +53,38 @@ module tb_conv1_banked_ram;
         end
     endtask
 
+
+    task automatic write_pool2(
+        input logic [8:0] addr,
+        input logic signed [15:0] data
+    );
+        begin
+            @(negedge clk);
+            pool2_write_en = 1'b1;
+            pool2_write_addr = addr;
+            pool2_write_data = data;
+            @(negedge clk);
+            pool2_write_en = 1'b0;
+        end
+    endtask
+
+    task automatic check_gru(
+        input logic [8:0] addr,
+        input logic signed [15:0] expected
+    );
+        begin
+            @(negedge clk);
+            gru_read_mode = 1'b1;
+            gru_read_addr = addr;
+            @(posedge clk);
+            #1;
+            if ($isunknown(gru_read_data) || (gru_read_data !== expected)) begin
+                $display("GRU mismatch addr=%0d got=%0d expected=%0d",
+                         addr, gru_read_data, expected);
+                errors = errors + 1;
+            end
+        end
+    endtask
     task automatic check_pair(
         input logic [ADDR_W-1:0] addr0,
         input logic [ADDR_W-1:0] addr1,
@@ -74,6 +118,11 @@ module tb_conv1_banked_ram;
         write_en = 1'b0;
         write_addr = '0;
         write_data = '0;
+        pool2_write_en = 1'b0;
+        pool2_write_addr = '0;
+        pool2_write_data = '0;
+        gru_read_mode = 1'b0;
+        gru_read_addr = '0;
         read_addr_kh0 = '0;
         read_addr_kh1 = 16'd1;
         errors = 0;
@@ -98,8 +147,16 @@ module tb_conv1_banked_ram;
         check_pair(16'd3120, 16'd3121, 320, 384);
         check_pair(16'd6240, 16'd6241, 16320, 640);
 
+        // Reuse the first 270 entries as the exact Pool2-to-GRU buffer.
+        write_pool2(9'd0, 16'sh12ab);
+        write_pool2(9'd1, -16'sd1234);
+        write_pool2(9'd269, 16'sh7ffe);
+        check_gru(9'd0, 16'sh12ab);
+        check_gru(9'd1, -16'sd1234);
+        check_gru(9'd269, 16'sh7ffe);
+
         if (errors == 0)
-            $display("PASS: Conv1 even/odd UQ5 banks restore Conv2 Q11 data.");
+            $display("PASS: Conv1 banks serve Conv2 and reuse storage for Pool2/GRU.");
         else begin
             $display("FAIL: Conv1 banked RAM errors=%0d", errors);
             $fatal(1);

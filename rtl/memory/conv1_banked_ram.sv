@@ -4,6 +4,7 @@ module conv1_banked_ram #(
     parameter int INPUT_F    = 11,
     parameter int STORED_F   = 5,
     parameter int LOG_ADDR_W = 16,
+    parameter int POOL2_ADDR_W = 9,
     parameter int BANK_DEPTH = (20 * 156 * 21) / 2,
     parameter int BANK_ADDR_W = (BANK_DEPTH <= 1)
                                   ? 1 : $clog2(BANK_DEPTH) // 15
@@ -14,6 +15,14 @@ module conv1_banked_ram #(
     input  logic                       write_en,
     input  logic [LOG_ADDR_W-1:0]      write_logical_addr,
     input  logic signed [15:0]         write_q11_data,
+    input  logic                       pool2_write_en,
+    input  logic [POOL2_ADDR_W-1:0]    pool2_write_addr,
+    input  logic signed [15:0]         pool2_write_data,
+
+    input  logic                       gru_read_mode,
+    input  logic [POOL2_ADDR_W-1:0]    gru_read_addr,
+    output logic signed [15:0]         gru_read_data,
+
 
     input  logic [LOG_ADDR_W-1:0]      read_logical_addr_kh0,
     input  logic [LOG_ADDR_W-1:0]      read_logical_addr_kh1,
@@ -31,6 +40,9 @@ module conv1_banked_ram #(
     logic [7:0] quantized_write_data;
     logic [BANK_ADDR_W-1:0] write_bank_addr;
     logic [BANK_ADDR_W-1:0] even_read_addr, odd_read_addr;
+    logic even_write_en, odd_write_en;
+    logic [BANK_ADDR_W-1:0] even_write_addr, odd_write_addr;
+    logic [7:0] even_write_data, odd_write_data;
     logic [7:0] even_read_data, odd_read_data;
     logic kh0_is_odd_d1;
 
@@ -79,8 +91,37 @@ module conv1_banked_ram #(
         write_bank_addr = write_logical_addr[LOG_ADDR_W-1:1];
 
         // 判斷 kh0、kh1 的高度是否為奇數，將偶數存在 even_mem ，奇數存在 odd_mem
-        if (!read_logical_addr_kh0[0]) begin
-            // 除以二存入
+
+        // Pool2 重新使用兩個 bank 作為 16-bit 記憶體
+        even_write_en   = write_en && !write_logical_addr[0];
+        odd_write_en    = write_en &&  write_logical_addr[0];
+        even_write_addr = write_bank_addr;
+        odd_write_addr  = write_bank_addr;
+        even_write_data = quantized_write_data;
+        odd_write_data  = quantized_write_data;
+
+        // Pool2 輸出結果依序存入even, odd RAM
+        if (pool2_write_en) begin
+            even_write_en   = 1'b1;
+            odd_write_en    = 1'b1;
+            even_write_addr = {{(BANK_ADDR_W-POOL2_ADDR_W){1'b0}},
+                               pool2_write_addr};
+            odd_write_addr  = {{(BANK_ADDR_W-POOL2_ADDR_W){1'b0}},
+                               pool2_write_addr};
+            even_write_data = pool2_write_data[7:0];
+            odd_write_data  = pool2_write_data[15:8];
+        end
+
+        // GRU 依序讀出
+        if (gru_read_mode) begin
+            even_read_addr = {{(BANK_ADDR_W-POOL2_ADDR_W){1'b0}},
+                              gru_read_addr};
+            odd_read_addr  = {{(BANK_ADDR_W-POOL2_ADDR_W){1'b0}},
+                              gru_read_addr};
+        end
+
+        // Conv1 輸出：除以二存入
+        else if (!read_logical_addr_kh0[0]) begin
             even_read_addr = read_logical_addr_kh0[LOG_ADDR_W-1:1];
             odd_read_addr  = read_logical_addr_kh1[LOG_ADDR_W-1:1];
         end else begin
@@ -88,7 +129,7 @@ module conv1_banked_ram #(
             odd_read_addr  = read_logical_addr_kh0[LOG_ADDR_W-1:1];
         end
 
-        // 將偶數和奇數的 Q5 還原成 Q11
+        // Conv2 讀取：將偶數和奇數的 Q5 還原成 Q11
         if (!kh0_is_odd_d1) begin
             read_q11_data_kh0 = restore_q11(even_read_data);
             read_q11_data_kh1 = restore_q11(odd_read_data);
@@ -96,15 +137,18 @@ module conv1_banked_ram #(
             read_q11_data_kh0 = restore_q11(odd_read_data);
             read_q11_data_kh1 = restore_q11(even_read_data);
         end
+
+        // Pool2 將兩個 bank 結合成 16-bit 資料輸入 GRU
+        gru_read_data = $signed({odd_read_data, even_read_data});
     end
 
     always_ff @(posedge clk) begin
         // 寫入偶數
-        if (write_en && !write_logical_addr[0])
-            even_height_mem[write_bank_addr] <= quantized_write_data;
+        if (even_write_en)
+            even_height_mem[even_write_addr] <= even_write_data;
         // 寫入奇數
-        if (write_en && write_logical_addr[0])
-            odd_height_mem[write_bank_addr] <= quantized_write_data;
+        if (odd_write_en)
+            odd_height_mem[odd_write_addr] <= odd_write_data;
 
         even_read_data <= even_height_mem[even_read_addr];
         odd_read_data  <= odd_height_mem[odd_read_addr];
@@ -123,5 +167,7 @@ module conv1_banked_ram #(
             $error("conv1_banked_ram requires INPUT_F >= STORED_F");
         if ((1 << BANK_ADDR_W) < BANK_DEPTH)
             $error("conv1_banked_ram BANK_ADDR_W is too small");
+        if (BANK_ADDR_W < POOL2_ADDR_W)
+            $error("conv1_banked_ram POOL2_ADDR_W exceeds bank address width");
     end
 endmodule

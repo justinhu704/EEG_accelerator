@@ -3,8 +3,8 @@
 //
 // RAM A -> Conv1/BN1/ReLU1                   -> Conv1 even/odd banks
 // Conv1 banks -> Conv2/BN2/ReLU2/Pool1        -> RAM A
-// RAM A -> Conv3/BN3/ReLU3/streaming Pool2   -> RAM B (270 words)
-// RAM B -> GRU                               -> RAM A
+// RAM A -> Conv3/BN3/ReLU3/streaming Pool2   -> reused Conv1 banks
+// Reused Conv1 banks -> GRU                  -> RAM A
 module cnn_gru_top #(
     parameter INPUT_FILE   = "mem/golden/q_in_act.mem",
     parameter CONV1_W_FILE = "mem/weights/conv1_W.mem",
@@ -61,8 +61,6 @@ module cnn_gru_top #(
     output logic signed [15:0] result_read_data
 );
     localparam int RAM_A_DEPTH = 19 * 18 * 20;  // Pool1 is RAM A's largest tensor.
-    localparam int RAM_B_DEPTH = 18 * 1 * 15;
-    localparam int RAM_B_ADDR_W = $clog2(RAM_B_DEPTH);
     localparam int RAM_ADDR_W = 16;
     localparam int POOL1_ADDR_W = 13;
     localparam int CONV1_SIZE = 20 * 156 * 21;
@@ -104,7 +102,7 @@ module cnn_gru_top #(
     logic [RAM_ADDR_W-1:0] ram_a_internal_read_addr;
     logic signed [15:0] ram_a_read_data;
     logic signed [15:0] conv1_bank_data_kh0, conv1_bank_data_kh1;
-    logic signed [15:0] ram_b_read_data;
+    logic signed [15:0] shared_pool2_gru_data;
     logic ram_a_write_en;
     logic [RAM_ADDR_W-1:0] ram_a_write_addr;
     logic signed [15:0] ram_a_write_data;
@@ -174,25 +172,16 @@ module cnn_gru_top #(
         .write_en(conv1_valid),
         .write_logical_addr(conv1_addr[RAM_ADDR_W-1:0]),
         .write_q11_data(conv1_data),
+        .pool2_write_en(pool2_valid),
+        .pool2_write_addr(pool2_addr[8:0]),
+        .pool2_write_data(pool2_data),
+        .gru_read_mode((state == S_START_GRU) || (state == S_RUN_GRU)),
+        .gru_read_addr(gru_input_addr[8:0]),
+        .gru_read_data(shared_pool2_gru_data),
         .read_logical_addr_kh0(conv2_input_addr[RAM_ADDR_W-1:0]),
         .read_logical_addr_kh1(conv2_input_addr_kh1[RAM_ADDR_W-1:0]),
         .read_q11_data_kh0(conv1_bank_data_kh0),
         .read_q11_data_kh1(conv1_bank_data_kh1)
-    );
-
-    // =======================================
-    // RAM B stores only the 270 Pool2 results consumed by GRU
-    // =======================================
-    activation_ram #(
-        .DATA_W(16), .DEPTH(RAM_B_DEPTH), .ADDR_W(RAM_B_ADDR_W),
-        .MEM_FILE("")
-    ) u_ram_b (
-        .clk(clk),
-        .write_en(pool2_valid),
-        .write_addr(pool2_addr[RAM_B_ADDR_W-1:0]),
-        .write_data(pool2_data),
-        .read_addr(gru_input_addr[RAM_B_ADDR_W-1:0]),
-        .read_data(ram_b_read_data)
     );
 
     assign result_read_data = ram_a_read_data;
@@ -285,7 +274,7 @@ module cnn_gru_top #(
     ) u_gru (
         .clk(clk), .rst_n(rst_n), .start(gru_start),
         .busy(gru_busy), .done(gru_done),
-        .input_addr(gru_input_addr), .input_data(ram_b_read_data),
+        .input_addr(gru_input_addr), .input_data(shared_pool2_gru_data),
         .output_valid(gru_valid), .output_addr(gru_addr),
         .output_data(gru_data)
     );
