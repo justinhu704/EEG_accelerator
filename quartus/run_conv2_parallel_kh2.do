@@ -22,7 +22,7 @@ vlog -sv ../rtl/common/sat16.sv
 vlog -sv ../rtl/common/pe_mac.sv
 vlog -sv ../rtl/memory/weight_rom.sv
 vlog -sv ../rtl/memory/activation_ram.sv
-vlog -sv ../rtl/memory/activation_ram_2r1w.sv
+vlog -sv ../rtl/memory/conv1_banked_ram.sv
 vlog -sv ../rtl/conv/conv_engine_parallel_counter.sv
 vlog -sv ../rtl/conv/conv_engine_parallel_kh2.sv
 vlog -sv ../tb/unit/tb_conv2_parallel_kh2.sv

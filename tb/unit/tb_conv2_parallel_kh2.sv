@@ -35,6 +35,7 @@ module tb_conv2_parallel_kh2;
     logic signed [15:0] new_output_data;
     logic signed [(32*LANES)-1:0] new_weight_data;
     logic signed [(16*LANES)-1:0] new_bias_data;
+    logic signed [15:0] new_input_mem [0:INPUT_DEPTH-1];
 
     logic signed [15:0] old_results [0:OUTPUT_SIZE-1];
     logic signed [15:0] new_results [0:OUTPUT_SIZE-1];
@@ -56,17 +57,13 @@ module tb_conv2_parallel_kh2;
         .read_data(old_input_data)
     );
 
-    activation_ram_2r1w #(
-        .DATA_W(16), .DEPTH(INPUT_DEPTH),
-        .ADDR_W($clog2(INPUT_DEPTH)),
-        .MEM_FILE("../mem/golden/q_relu1_act.mem")
-    ) u_new_input_ram (
-        .clk(clk), .port_a_write_en(1'b0), .port_a_addr(
-            new_input_addr0[$clog2(INPUT_DEPTH)-1:0]),
-        .port_a_write_data('0), .port_a_read_data(new_input_data0),
-        .port_b_read_addr(new_input_addr1[$clog2(INPUT_DEPTH)-1:0]),
-        .port_b_read_data(new_input_data1)
-    );
+    initial $readmemh("../mem/golden/q_relu1_act.mem", new_input_mem);
+    always_ff @(posedge clk) begin
+        new_input_data0 <= new_input_mem[
+            new_input_addr0[$clog2(INPUT_DEPTH)-1:0]];
+        new_input_data1 <= new_input_mem[
+            new_input_addr1[$clog2(INPUT_DEPTH)-1:0]];
+    end
 
     weight_rom #(
         .DATA_W(16*LANES), .DEPTH(OLD_WEIGHT_DEPTH),

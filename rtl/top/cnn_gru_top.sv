@@ -1,9 +1,9 @@
 // Standalone complete CNN + GRU accelerator top.
 // This module does not instantiate cnn_stage1/2/3_top.
 //
-// RAM A -> Conv1/BN1/ReLU1                   -> RAM B
-// RAM B -> Conv2/BN2/ReLU2/streaming Pool1   -> RAM A
-// RAM A -> Conv3/BN3/ReLU3/streaming Pool2   -> RAM B
+// RAM A -> Conv1/BN1/ReLU1                   -> Conv1 even/odd banks
+// Conv1 banks -> Conv2/BN2/ReLU2/Pool1        -> RAM A
+// RAM A -> Conv3/BN3/ReLU3/streaming Pool2   -> RAM B (270 words)
 // RAM B -> GRU                               -> RAM A
 module cnn_gru_top #(
     parameter INPUT_FILE   = "mem/golden/q_in_act.mem",
@@ -61,7 +61,8 @@ module cnn_gru_top #(
     output logic signed [15:0] result_read_data
 );
     localparam int RAM_A_DEPTH = 19 * 18 * 20;  // Pool1 is RAM A's largest tensor.
-    localparam int RAM_B_DEPTH = 20 * 156 * 21; // ReLU1 is RAM B's largest tensor.
+    localparam int RAM_B_DEPTH = 18 * 1 * 15;
+    localparam int RAM_B_ADDR_W = $clog2(RAM_B_DEPTH);
     localparam int RAM_ADDR_W = 16;
     localparam int POOL1_ADDR_W = 13;
     localparam int CONV1_SIZE = 20 * 156 * 21;
@@ -101,14 +102,12 @@ module cnn_gru_top #(
     logic signed [15:0] gru_data;
 
     logic [RAM_ADDR_W-1:0] ram_a_internal_read_addr;
-    logic [RAM_ADDR_W-1:0] ram_b_internal_read_addr;
     logic signed [15:0] ram_a_read_data;
-    logic signed [15:0] ram_b_read_data, ram_b_read_data_kh1;
-    logic ram_a_write_en, ram_b_write_en;
-    logic [RAM_ADDR_W-1:0] ram_a_write_addr, ram_b_write_addr;
-    logic signed [15:0] ram_a_write_data, ram_b_write_data;
-    logic [RAM_ADDR_W-1:0] ram_b_port_a_addr;
-    logic [RAM_ADDR_W-1:0] ram_b_port_b_addr;
+    logic signed [15:0] conv1_bank_data_kh0, conv1_bank_data_kh1;
+    logic signed [15:0] ram_b_read_data;
+    logic ram_a_write_en;
+    logic [RAM_ADDR_W-1:0] ram_a_write_addr;
+    logic signed [15:0] ram_a_write_data;
 
     always_comb begin
         conv1_start = (state == S_IDLE) && start;
@@ -131,22 +130,10 @@ module cnn_gru_top #(
         else
             ram_a_internal_read_addr = result_read_addr;
 
-        if ((state == S_START_GRU) || (state == S_RUN_GRU))
-            ram_b_internal_read_addr = gru_input_addr[15:0];
-        else if ((state == S_START_CONV2) || (state == S_RUN_CONV2))
-            ram_b_internal_read_addr = conv2_input_addr[15:0];
-        else
-            ram_b_internal_read_addr = '0;
-
-        if ((state == S_START_CONV2) || (state == S_RUN_CONV2))
-            ram_b_port_b_addr = conv2_input_addr_kh1[15:0];
-        else
-            ram_b_port_b_addr = '0;
     end
 
     // =======================================
-    // RAM A destinations: external EEG loader, streaming Pool1, and final
-    // GRU results. Pool2 cannot write here while Conv3 reads the Pool1 tensor.
+    // RAM A destinations: external EEG loader, streaming Pool1, and final GRU results
     // =======================================
     always_comb begin
         ram_a_write_en = (input_ready && input_write_en) ||
@@ -165,23 +152,6 @@ module cnn_gru_top #(
         end
     end
 
-    // =======================================
-    // RAM B destinations: ReLU1 and streaming Pool2.
-    // ReLU1 is no longer needed when Pool2 starts, so Pool2 safely reuses it.
-    // =======================================
-    always_comb begin
-        ram_b_write_en = conv1_valid || pool2_valid;
-        if (pool2_valid) begin
-            ram_b_write_addr = {
-                {(RAM_ADDR_W - 13){1'b0}}, pool2_addr
-            };
-            ram_b_write_data = pool2_data;
-        end else begin
-            ram_b_write_addr = conv1_addr[15:0];
-            ram_b_write_data = conv1_data;
-        end
-    end
-
     activation_ram #(
         .DATA_W(16), .DEPTH(RAM_A_DEPTH), .ADDR_W(RAM_ADDR_W),
         .MEM_FILE(INPUT_FILE)
@@ -192,26 +162,37 @@ module cnn_gru_top #(
         .read_addr(ram_a_internal_read_addr), .read_data(ram_a_read_data)
     );
 
-    // Port A writes ReLU1/Pool2 when requested and otherwise serves the
-    // ordinary RAM-B read. Port B supplies Conv2's simultaneous kh=1 read.
-    always_comb begin
-        if (ram_b_write_en)
-            ram_b_port_a_addr = ram_b_write_addr;
-        else
-            ram_b_port_a_addr = ram_b_internal_read_addr;
-    end
+    // =======================================
+    // Conv1 banked RAM: ReLU1 is quantized to UQ5 and separated by height
+    // parity. Conv2 reads one even and one odd activation every clock.
+    // =======================================
+    conv1_banked_ram #(
+        .INPUT_F(11), .STORED_F(5), .LOG_ADDR_W(RAM_ADDR_W),
+        .BANK_DEPTH(CONV1_SIZE / 2)
+    ) u_conv1_ram (
+        .clk(clk), .rst_n(rst_n),
+        .write_en(conv1_valid),
+        .write_logical_addr(conv1_addr[RAM_ADDR_W-1:0]),
+        .write_q11_data(conv1_data),
+        .read_logical_addr_kh0(conv2_input_addr[RAM_ADDR_W-1:0]),
+        .read_logical_addr_kh1(conv2_input_addr_kh1[RAM_ADDR_W-1:0]),
+        .read_q11_data_kh0(conv1_bank_data_kh0),
+        .read_q11_data_kh1(conv1_bank_data_kh1)
+    );
 
-    activation_ram_2r1w #(
-        .DATA_W(16), .DEPTH(RAM_B_DEPTH), .ADDR_W(RAM_ADDR_W),
+    // =======================================
+    // RAM B stores only the 270 Pool2 results consumed by GRU
+    // =======================================
+    activation_ram #(
+        .DATA_W(16), .DEPTH(RAM_B_DEPTH), .ADDR_W(RAM_B_ADDR_W),
         .MEM_FILE("")
     ) u_ram_b (
         .clk(clk),
-        .port_a_write_en(ram_b_write_en),
-        .port_a_addr(ram_b_port_a_addr),
-        .port_a_write_data(ram_b_write_data),
-        .port_a_read_data(ram_b_read_data),
-        .port_b_read_addr(ram_b_port_b_addr),
-        .port_b_read_data(ram_b_read_data_kh1)
+        .write_en(pool2_valid),
+        .write_addr(pool2_addr[RAM_B_ADDR_W-1:0]),
+        .write_data(pool2_data),
+        .read_addr(gru_input_addr[RAM_B_ADDR_W-1:0]),
+        .read_data(ram_b_read_data)
     );
 
     assign result_read_data = ram_a_read_data;
@@ -247,8 +228,8 @@ module cnn_gru_top #(
         .busy(conv2_busy),
         .input_addr_kh0(conv2_input_addr),
         .input_addr_kh1(conv2_input_addr_kh1),
-        .input_data_kh0(ram_b_read_data),
-        .input_data_kh1(ram_b_read_data_kh1),
+        .input_data_kh0(conv1_bank_data_kh0),
+        .input_data_kh1(conv1_bank_data_kh1),
         .output_valid(conv2_valid), .output_addr(conv2_addr),
         .output_data(conv2_data)
     );

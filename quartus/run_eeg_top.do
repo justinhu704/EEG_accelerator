@@ -9,7 +9,7 @@ vlog -sv ../rtl/common/sat16.sv
 vlog -sv ../rtl/common/pe_mac.sv
 vlog -sv ../rtl/memory/weight_rom.sv
 vlog -sv ../rtl/memory/activation_ram.sv
-vlog -sv ../rtl/memory/activation_ram_2r1w.sv
+vlog -sv ../rtl/memory/conv1_banked_ram.sv
 vlog -sv ../rtl/bn_relu/relu.sv
 vlog -sv ../rtl/bn_relu/bn_affine.sv
 vlog -sv ../rtl/conv/conv_controller.sv
