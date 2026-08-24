@@ -8,7 +8,8 @@
 // Reset mode   : before-multiplication, Uh * (r .* h_previous)
 //
 // Compared with gru_engine.sv, this version keeps the verified gate math but
-// pipelines the candidate path:
+// pipelines both the gate and candidate paths:
+//   - Split Wr/Wz/Ur/Uz address, multiply, and accumulation into stages.
 //   1. Calculate r .* h_previous once per time step.
 //   2. Stream Wh and Uh in their existing MATLAB column-major order.
 //   3. Interleave the stream across nine independent candidate accumulators.
@@ -103,8 +104,11 @@ module gru_engine_pipeline #(
         S_LOAD_X,
         S_LOAD_DRAIN,
         S_GATE_CLEAR,
+        S_GATE_BIAS,
         S_GATE_INPUT,
+        S_GATE_INPUT_DRAIN,
         S_GATE_RECURRENT,
+        S_GATE_RECURRENT_DRAIN,
         S_GATE_LUT,
         S_GATE_WAIT,
         S_GATED_H_PREP,
@@ -134,12 +138,34 @@ module gru_engine_pipeline #(
     logic signed [63:0] reset_accumulator;
     logic signed [63:0] update_accumulator;
 
+    // Gate bias/address preparation. Address counters replace the long
+    // gate_neuron + HIDDEN_SIZE * index combinational path.
     logic [INPUT_ADDR_W-1:0] gate_input_addr;
     logic [RECURRENT_ADDR_W-1:0] gate_recurrent_addr;
-    logic signed [31:0] wr_product;
-    logic signed [31:0] wz_product;
-    logic signed [31:0] ur_product;
-    logic signed [31:0] uz_product;
+    logic signed [15:0] reset_bias_s1;
+    logic signed [15:0] update_bias_s1;
+
+    // Wr/Wz pipeline: weight/data register -> multiply -> accumulator.
+    logic signed [15:0] wr_weight_s1;
+    logic signed [15:0] wz_weight_s1;
+    logic signed [15:0] gate_input_data_s1;
+    logic gate_input_valid_s1;
+    logic gate_input_last_s1;
+    logic signed [31:0] wr_product_s2;
+    logic signed [31:0] wz_product_s2;
+    logic gate_input_valid_s2;
+    logic gate_input_last_s2;
+
+    // Ur/Uz pipeline: weight/data register -> multiply -> accumulator.
+    logic signed [15:0] ur_weight_s1;
+    logic signed [15:0] uz_weight_s1;
+    logic signed [15:0] gate_recurrent_data_s1;
+    logic gate_recurrent_valid_s1;
+    logic gate_recurrent_last_s1;
+    logic signed [31:0] ur_product_s2;
+    logic signed [31:0] uz_product_s2;
+    logic gate_recurrent_valid_s2;
+    logic gate_recurrent_last_s2;
 
     // Wh pipeline: synchronous ROM read -> 16x16 multiply -> banked add.
     logic [INPUT_ADDR_W-1:0] wh_addr;
@@ -220,22 +246,6 @@ module gru_engine_pipeline #(
         end
     endfunction
 
-    // 計算 Gate (r, z) 的乘法組合邏輯
-    always_comb begin
-        gate_input_addr = gate_neuron + HIDDEN_SIZE * feature_index;
-        gate_recurrent_addr = gate_neuron
-                            + HIDDEN_SIZE * recurrent_index;
-
-        wr_product = $signed(wr_mem[gate_input_addr])
-                   * $signed(x_buffer[feature_index]);
-        wz_product = $signed(wz_mem[gate_input_addr])
-                   * $signed(x_buffer[feature_index]);
-        ur_product = $signed(ur_mem[gate_recurrent_addr])
-                   * $signed(hidden_state[recurrent_index]);
-        uz_product = $signed(uz_mem[gate_recurrent_addr])
-                   * $signed(hidden_state[recurrent_index]);
-    end
-
     // 格式截斷與轉換邏輯：將 64-bit 累加器縮小為 F9 給 LUT 讀取
     always_comb begin
         reset_lut_input = saturate16(
@@ -289,6 +299,30 @@ module gru_engine_pipeline #(
             load_data_valid <= 1'b0;
             reset_accumulator <= '0;
             update_accumulator <= '0;
+            gate_input_addr <= '0;
+            gate_recurrent_addr <= '0;
+            reset_bias_s1 <= '0;
+            update_bias_s1 <= '0;
+
+            wr_weight_s1 <= '0;
+            wz_weight_s1 <= '0;
+            gate_input_data_s1 <= '0;
+            gate_input_valid_s1 <= 1'b0;
+            gate_input_last_s1 <= 1'b0;
+            wr_product_s2 <= '0;
+            wz_product_s2 <= '0;
+            gate_input_valid_s2 <= 1'b0;
+            gate_input_last_s2 <= 1'b0;
+
+            ur_weight_s1 <= '0;
+            uz_weight_s1 <= '0;
+            gate_recurrent_data_s1 <= '0;
+            gate_recurrent_valid_s1 <= 1'b0;
+            gate_recurrent_last_s1 <= 1'b0;
+            ur_product_s2 <= '0;
+            uz_product_s2 <= '0;
+            gate_recurrent_valid_s2 <= 1'b0;
+            gate_recurrent_last_s2 <= 1'b0;
 
             wh_addr <= '0;
             wh_feature <= '0;
@@ -337,6 +371,7 @@ module gru_engine_pipeline #(
 
             output_valid <= 1'b0;
             activation_lut_valid <= 1'b0;
+
             output_addr <= '0;
             output_data <= '0;
 
@@ -352,6 +387,43 @@ module gru_engine_pipeline #(
         end else begin
             output_valid <= 1'b0;
             activation_lut_valid <= 1'b0;
+
+            // -------------------------------------------------------------
+            // Reset/Update Gate Pipeline
+            // Stage 1 權重與資料暫存 -> Stage 2 乘法 -> Stage 3 累加
+            // -------------------------------------------------------------
+            gate_input_valid_s1 <= 1'b0;
+            gate_input_valid_s2 <= gate_input_valid_s1;
+            gate_input_last_s2 <= gate_input_last_s1;
+            if (gate_input_valid_s1) begin
+                wr_product_s2 <= $signed(wr_weight_s1)
+                               * $signed(gate_input_data_s1);
+                wz_product_s2 <= $signed(wz_weight_s1)
+                               * $signed(gate_input_data_s1);
+            end
+
+            gate_recurrent_valid_s1 <= 1'b0;
+            gate_recurrent_valid_s2 <= gate_recurrent_valid_s1;
+            gate_recurrent_last_s2 <= gate_recurrent_last_s1;
+            if (gate_recurrent_valid_s1) begin
+                ur_product_s2 <= $signed(ur_weight_s1)
+                               * $signed(gate_recurrent_data_s1);
+                uz_product_s2 <= $signed(uz_weight_s1)
+                               * $signed(gate_recurrent_data_s1);
+            end
+
+            // 乘法結果已經過暫存，這一級只保留64-bit累加器加法。
+            if (gate_input_valid_s2) begin
+                reset_accumulator <= reset_accumulator
+                                   + ($signed(wr_product_s2) <<< 2);
+                update_accumulator <= update_accumulator
+                                    + ($signed(wz_product_s2) <<< 3);
+            end else if (gate_recurrent_valid_s2) begin
+                reset_accumulator <= reset_accumulator
+                                   + $signed(ur_product_s2);
+                update_accumulator <= update_accumulator
+                                    + $signed(uz_product_s2);
+            end
 
             // -------------------------------------------------------------
             // Wh, Uh Pipeline: Stage 1 -> Stage 2 -> 寫入累加器
@@ -444,6 +516,10 @@ module gru_engine_pipeline #(
                     load_data_valid <= 1'b0;
                     if (start) begin
                         time_index <= '0;
+                        gate_input_valid_s1 <= 1'b0;
+                        gate_input_valid_s2 <= 1'b0;
+                        gate_recurrent_valid_s1 <= 1'b0;
+                        gate_recurrent_valid_s2 <= 1'b0;
                         wh_valid_s1 <= 1'b0;
                         wh_valid_s2 <= 1'b0;
                         uh_valid_s1 <= 1'b0;
@@ -494,36 +570,73 @@ module gru_engine_pipeline #(
                 // =============================================================
                 // accumulators 填入 bias
                 S_GATE_CLEAR: begin
-                    reset_accumulator <= $signed(br_mem[gate_neuron]) <<< 15;
-                    update_accumulator <= $signed(bz_mem[gate_neuron]) <<< 15;
+                    // 先暫存 bias 與兩組起始位址，切斷 gate_neuron 長路徑。
+                    reset_bias_s1 <= br_mem[gate_neuron];
+                    update_bias_s1 <= bz_mem[gate_neuron];
+                    gate_input_addr <= gate_neuron;
+                    gate_recurrent_addr <= gate_neuron;
+                    gate_input_valid_s1 <= 1'b0;
+                    gate_input_valid_s2 <= 1'b0;
+                    gate_recurrent_valid_s1 <= 1'b0;
+                    gate_recurrent_valid_s2 <= 1'b0;
+                    state <= S_GATE_BIAS;
+                end
+
+                // 將已暫存的 bias 對齊成 accumulator 格式。
+                S_GATE_BIAS: begin
+                    reset_accumulator <= $signed(reset_bias_s1) <<< 15;
+                    update_accumulator <= $signed(update_bias_s1) <<< 15;
                     feature_index <= '0;
+                    recurrent_index <= '0;
                     state <= S_GATE_INPUT;
                 end
 
                 // 與 Wr Wz 做 mac
+                // 每個 clock 發出一筆，乘法與累加由上方 pipeline 接手。
                 S_GATE_INPUT: begin
-                    reset_accumulator <= reset_accumulator
-                                       + ($signed(wr_product) <<< 2);
-                    update_accumulator <= update_accumulator
-                                        + ($signed(wz_product) <<< 3);
+                    wr_weight_s1 <= wr_mem[gate_input_addr];
+                    wz_weight_s1 <= wz_mem[gate_input_addr];
+                    gate_input_data_s1 <= x_buffer[feature_index];
+                    gate_input_valid_s1 <= 1'b1;
+                    gate_input_last_s1 <= (feature_index == INPUT_SIZE-1);
+
                     if (feature_index == INPUT_SIZE-1) begin
-                        recurrent_index <= '0;
-                        state <= S_GATE_RECURRENT;
+                        state <= S_GATE_INPUT_DRAIN;
                     end else begin
                         feature_index <= feature_index + 1'b1;
+                        gate_input_addr <= gate_input_addr + HIDDEN_SIZE;
                     end
+                end
+
+                // 等待 Wr/Wz 最後一筆乘積寫入 accumulator。
+                S_GATE_INPUT_DRAIN: begin
+                    if (gate_input_valid_s2 && gate_input_last_s2)
+                        state <= S_GATE_RECURRENT;
                 end
 
                 // 與遞迴權重 Ur Uz 做 mac
                 S_GATE_RECURRENT: begin
-                    reset_accumulator <= reset_accumulator
-                                       + $signed(ur_product);
-                    update_accumulator <= update_accumulator
-                                        + $signed(uz_product);
-                    if (recurrent_index == HIDDEN_SIZE-1)
-                        state <= S_GATE_LUT;
-                    else
+                    ur_weight_s1 <= ur_mem[gate_recurrent_addr];
+                    uz_weight_s1 <= uz_mem[gate_recurrent_addr];
+                    gate_recurrent_data_s1
+                        <= hidden_state[recurrent_index];
+                    gate_recurrent_valid_s1 <= 1'b1;
+                    gate_recurrent_last_s1
+                        <= (recurrent_index == HIDDEN_SIZE-1);
+
+                    if (recurrent_index == HIDDEN_SIZE-1) begin
+                        state <= S_GATE_RECURRENT_DRAIN;
+                    end else begin
                         recurrent_index <= recurrent_index + 1'b1;
+                        gate_recurrent_addr
+                            <= gate_recurrent_addr + HIDDEN_SIZE;
+                    end
+                end
+
+                // 等待 Ur/Uz 最後一筆乘積寫入 accumulator。
+                S_GATE_RECURRENT_DRAIN: begin
+                    if (gate_recurrent_valid_s2 && gate_recurrent_last_s2)
+                        state <= S_GATE_LUT;
                 end
 
                 S_GATE_LUT:

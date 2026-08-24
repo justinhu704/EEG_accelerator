@@ -143,6 +143,7 @@ module fc_out_streaming #(
                     mac_valid_d1 <= 1'b0;
                     output_issue_valid_d1 <= 1'b0;
                     if (start) begin
+                        // accumulators 清零
                         for (clear_index = 0; clear_index < OUTPUT_SIZE;
                              clear_index = clear_index + 1)
                             accumulators[clear_index] <= '0;
@@ -153,7 +154,7 @@ module fc_out_streaming #(
                     end
                 end
 
-                // FC1/BN outputs arrive in index order 0 through 39.
+                // 等待 FC1/BN 的输出，接收 index 0 到 39
                 S_WAIT_INPUT: begin
                     if (input_valid) begin
                         current_input <= input_data;
@@ -163,8 +164,9 @@ module fc_out_streaming #(
                     end
                 end
 
-                // Issue one class weight per clock for the retained input.
+                // 對當前的所有輸入做 mac
                 S_MAC: begin
+                    // 等待 ROM 輸出延遲
                     mac_index_d1 <= mac_issue_index;
                     if (mac_issue_index == OUTPUT_SIZE-1) begin
                         state <= S_MAC_DRAIN;
@@ -173,9 +175,10 @@ module fc_out_streaming #(
                     end
                 end
 
-                // Consume the final synchronous weight-ROM result.
+                // 消耗 mac 的最後一個輸出
                 S_MAC_DRAIN: begin
                     mac_issue_index <= '0;
+                    // 判斷是否讀取完 40 個輸入
                     if (current_input_index == INPUT_SIZE-1) begin
                         output_issue_index <= '0;
                         state <= S_OUTPUT;
@@ -184,8 +187,9 @@ module fc_out_streaming #(
                     end
                 end
 
-                // After all 40 inputs, issue biases and output 105 logits.
+                // 105 clock cycle，依次加上 Bias
                 S_OUTPUT: begin
+                    // 等待 ROM 輸出延遲
                     output_index_d1 <= output_issue_index;
                     if (output_issue_index == OUTPUT_SIZE-1) begin
                         state <= S_OUTPUT_DRAIN;
@@ -194,7 +198,7 @@ module fc_out_streaming #(
                     end
                 end
 
-                // Emit the final synchronous bias-ROM result.
+                // ROM 輸出延遲，吐出第 105 個輸出結果
                 S_OUTPUT_DRAIN:
                     state <= S_DONE;
 
