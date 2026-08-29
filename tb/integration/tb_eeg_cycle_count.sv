@@ -3,12 +3,13 @@
 // Cycle profiler for one complete EEG inference:
 // CNN -> Pool2 -> GRU -> FC1/ReLU/BN -> FC_out -> Argmax.
 //
-// The simulation clock is 50 MHz. Cycle counts are measured from the clock
-// edge that accepts start through the clock edge where done is observed.
+// Cycle counts are elapsed clock intervals between the clock edge that accepts
+// start and the clock edge where done is observed.
 module tb_eeg_cycle_count;
     localparam int MAX_CYCLES = 20_100_000;
     localparam int EXPECTED_LOGITS = 105;
     localparam real CLOCK_PERIOD_NS = 20.0;
+    localparam real CLOCK_FREQ_MHZ = 1000.0 / CLOCK_PERIOD_NS;
 
     logic clk, rst_n, start;
     logic busy, done;
@@ -28,11 +29,11 @@ module tb_eeg_cycle_count;
     longint unsigned conv1_cycle;
     longint unsigned conv2_cycle;
     longint unsigned conv3_cycle;
-    longint unsigned pool2_cycle;
     longint unsigned gru_cycle;
     longint unsigned fc1_cycle;
     longint unsigned fc_out_cycle;
     longint unsigned total_cycles;
+    integer final_logit_count;
     integer logit_count;
     logic measuring;
 
@@ -120,7 +121,6 @@ module tb_eeg_cycle_count;
             conv1_cycle <= 0;
             conv2_cycle <= 0;
             conv3_cycle <= 0;
-            pool2_cycle <= 0;
             gru_cycle <= 0;
             fc1_cycle <= 0;
             fc_out_cycle <= 0;
@@ -143,8 +143,6 @@ module tb_eeg_cycle_count;
                 conv2_cycle <= cycle_number;
             if (dut.u_cnn_gru.conv3_start)
                 conv3_cycle <= cycle_number;
-            if (dut.u_cnn_gru.pool2_start)
-                pool2_cycle <= cycle_number;
             if (dut.u_cnn_gru.gru_start)
                 gru_cycle <= cycle_number;
             if (dut.fc1_start)
@@ -157,20 +155,26 @@ module tb_eeg_cycle_count;
 
             if (done && measuring) begin
                 total_cycles = cycle_number - start_cycle;
+                // If the last logit and done arrive in the same cycle, the
+                // nonblocking update above has not changed logit_count yet.
+                final_logit_count = logit_count + (logit_valid ? 1 : 0);
                 measuring <= 1'b0;
 
                 $display("");
                 $display("==================================================");
-                $display("Complete EEG inference cycle report (50 MHz)");
+                $display("Complete EEG inference cycle report (%0.3f MHz)",
+                         CLOCK_FREQ_MHZ);
                 $display("==================================================");
+                $display("Controller/start overhead : %0d cycles",
+                         conv1_cycle - start_cycle);
                 $display("Conv1 + BN1 + ReLU1       : %0d cycles",
                          conv2_cycle - conv1_cycle);
                 $display("Conv2 + BN2 + ReLU2/Pool1 : %0d cycles",
                          conv3_cycle - conv2_cycle);
-                $display("Conv3 + BN3 + ReLU3       : %0d cycles",
-                         pool2_cycle - conv3_cycle);
-                $display("Pool2                     : %0d cycles",
-                         gru_cycle - pool2_cycle);
+                // Pool2 and Conv3 start together and operate as one streaming
+                // interval, so separate start timestamps cannot divide them.
+                $display("Conv3 + BN3 + ReLU3/Pool2 : %0d cycles",
+                         gru_cycle - conv3_cycle);
                 $display("GRU                       : %0d cycles",
                          fc1_cycle - gru_cycle);
                 $display("FC1 + ReLU + BN           : %0d cycles",
@@ -180,16 +184,18 @@ module tb_eeg_cycle_count;
                 $display("--------------------------------------------------");
                 $display("TOTAL                     : %0d cycles",
                          total_cycles);
-                $display("Hardware time at 50 MHz   : %0.3f ms",
+                $display("Hardware time at %0.3f MHz: %0.3f ms",
+                         CLOCK_FREQ_MHZ,
                          total_cycles * CLOCK_PERIOD_NS / 1.0e6);
-                $display("Produced logits           : %0d", logit_count);
+                $display("Produced logits           : %0d",
+                         final_logit_count);
                 $display("Predicted class            : %0d", class_index);
                 $display("Winning logit              : %0d", winning_logit);
                 $display("==================================================");
 
-                if (logit_count != EXPECTED_LOGITS) begin
+                if (final_logit_count != EXPECTED_LOGITS) begin
                     $display("FAIL: expected %0d logits, received %0d.",
-                             EXPECTED_LOGITS, logit_count);
+                             EXPECTED_LOGITS, final_logit_count);
                     $fatal(1);
                 end else begin
                     $display("PASS: full EEG inference completed and cycle count is valid.");

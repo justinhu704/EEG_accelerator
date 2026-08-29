@@ -1,129 +1,149 @@
-# FPGA-Based EEG CNN-GRU Accelerator
+# FPGA EEG CNN-GRU Accelerator
 
-This project implements an FPGA-based accelerator for EEG signal classification. The inference pipeline combines convolutional neural network (CNN) layers with a gated recurrent unit (GRU) to process EEG data efficiently in hardware.
+This repository is part of an undergraduate project on running an EEG
+classification model on an FPGA. The model contains three CNN stages, a GRU,
+two fully connected layers, and a final argmax operation. The inference path is
+written in SystemVerilog and uses fixed-point arithmetic so that it can run on a
+DE1-SoC board.
 
-The design is written primarily in SystemVerilog and is developed using Intel Quartus Prime. Python host utilities are included for weight preparation, UART communication, dataset inference, and performance benchmarking.
+The current design accepts one EEG sample from a PC through UART, performs the
+complete CNN-GRU inference, and sends the predicted class and winning logit back
+to the PC. MATLAB and Python scripts are included for exporting the test data,
+packing weights, sending samples, and recording the FPGA results.
 
-## Features
+## System Overview
 
-- Hardware-accelerated EEG inference
-- SystemVerilog RTL implementation
-- Convolution, batch normalization, and ReLU processing
-- Streaming max-pooling
-- Fully connected layers
-- GRU-based temporal processing
-- On-chip activation and weight memory
-- UART communication between the FPGA and host computer
-- Unit testbenches and ModelSim/Questa simulation scripts
-- Python utilities for data transfer and benchmarking
+```text
+MATLAB/Python host
+       |
+       | UART request: sample ID + 3360 Q12 input values + CRC
+       v
+DE1-SoC FPGA
+       |
+       +-- CNN1 -> BN -> ReLU
+       +-- CNN2 -> BN -> ReLU -> MaxPool
+       +-- CNN3 -> BN -> ReLU -> MaxPool
+       +-- GRU -> FC -> ReLU -> BN -> FC -> Argmax
+       |
+       v
+UART response: predicted class + winning logit + CRC
+```
 
-## Project Structure
+The input shape is `21 x 160`, stored as 3360 signed 16-bit Q12 values. The
+classifier produces 105 output classes. On the board, the class index is also
+mapped back to its subject ID and shown on the seven-segment displays.
 
-The Quartus top-level entity is `fpga_uart_top`.
+## Hardware and Tools
+
+| Item | Setting used in this project |
+|---|---|
+| FPGA board | Terasic DE1-SoC |
+| FPGA device | Cyclone V `5CSEMA5F31C6` |
+| Board clock | 50 MHz `CLOCK_50` input |
+| Quartus project | Quartus Prime Lite 25.1 |
+| RTL language | SystemVerilog |
+| Simulation | Questa Altera FPGA / ModelSim |
+| Host environment | MATLAB and Python 3 |
+| UART setting | 921600 baud, 8 data bits, no parity, 1 stop bit |
+
+The Python UART scripts only require `pyserial`. Install it with:
+
+```powershell
+python -m pip install -r host\requirements.txt
+```
+
+## Repository Layout
 
 ```text
 EEG_Project/
-├── rtl/
-│   ├── bn_relu/    # Batch-normalization and ReLU operators
-│   ├── board/      # DE1-SoC top levels, sample loading, and board I/O
-│   ├── common/     # Shared arithmetic and fixed-point helpers
-│   ├── conv/       # Sequential and parallel convolution engines
-│   ├── display/    # Class mapping and seven-segment display logic
-│   ├── fc/         # Fully connected layers and final argmax
-│   ├── gru/        # GRU engines and activation lookup tables
-│   ├── memory/     # Activation RAM, weight ROM, and banked buffers
-│   ├── pooling/    # Memory-based and streaming max-pooling
-│   ├── top/        # CNN-GRU pipeline and inference control
-│   └── uart/       # UART receive, transmit, packet loading, and results
-│
-├── tb/
-│   ├── unit/       # Module-level SystemVerilog testbenches
-│   └── integration/ # Full-pipeline, FPGA top, and UART tests
-│
-├── host/           # Python/MATLAB export, UART, packing, and benchmark tools
-├── mem/
-│   └── board/      # Version-controlled fixed-point board test samples
-├── quartus/        # Timing constraints and ModelSim/Questa run scripts
-├── scripts/        # RTL support-data generation utilities
-├── docs/           # Data formats, memory map, UART, and verification notes
-│
-├── eeg_accelerator.qpf  # Quartus project descriptor
-├── eeg_accelerator.qsf  # Device, pin, top-level, and RTL source assignments
-├── eeg_accelerator_description.txt
-├── .gitignore
-└── README.md
+|-- rtl/        SystemVerilog modules for CNN, GRU, memory, UART, and board I/O
+|-- tb/         Unit and full-pipeline testbenches
+|-- host/       MATLAB/Python dataset export and UART tools
+|-- mem/        Fixed-point weights, lookup tables, and board test samples
+|-- quartus/    Quartus settings, timing constraints, and simulation scripts
+|-- scripts/    Utilities for generating RTL support data
+|-- docs/       UART packet format and implementation notes
+|-- eeg_accelerator.qpf
+|-- eeg_accelerator.qsf
+`-- README.md
 ```
 
-The production hierarchy starts at `rtl/board/fpga_uart_top.sv`. Some RTL
-files are retained as alternative implementations or for standalone
-verification. Generated build, simulation, dataset, and result files are
-excluded through `.gitignore`.
+The Quartus top-level entity is `fpga_uart_top`, implemented in
+`rtl/board/fpga_uart_top.sv`. Some older or alternative RTL modules are kept for
+comparison and separate simulation.
 
-## Requirements
+## Running a Simulation
 
-### FPGA Development
+1. Open ModelSim or QuestaSim and change the working directory to `quartus/`.
+2. Run one of the `.do` files from the Transcript window.
 
-- Intel Quartus Prime
-- ModelSim Intel FPGA Edition or QuestaSim
-- A supported Intel FPGA development board
-- USB-UART connection
+For example, the following script compiles and runs the UART top-level
+testbench:
 
-### Host Computer
-
-- Python 3
-- Required Python packages used by the scripts in `host/`
-
-The exact FPGA device, pin assignments, and top-level entity are defined in `eeg_accelerator.qsf`.
-
-## Getting Started
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/justinhu704/EEG_Project.git
-cd EEG_Project
+```tcl
+do run_fpga_uart_top.do
 ```
 
-Replace `justinhu704` with your GitHub username.
+Other useful scripts include:
 
-### 2. Open the Quartus Project
+- `run_eeg_top.do` for the complete inference path
+- `run_eeg_cycle_count.do` for RTL cycle counting
+- `run_gru_pipeline.do` for the GRU pipeline
+- `run_uart_unit.do` for the UART modules
 
-Open the following file in Intel Quartus Prime:
+The scripts for the parallel convolution designs first regenerate their packed
+weight files with `host/pack_parallel_conv_weights.py` and then compile the RTL
+and testbench files.
 
-```text
-eeg_accelerator.qpf
+## Compiling for the DE1-SoC
+
+1. Open `eeg_accelerator.qpf` in Quartus Prime.
+2. Check that `fpga_uart_top` is selected as the top-level entity.
+3. Start compilation from **Processing > Start Compilation**.
+4. Program the generated `.sof` file to the DE1-SoC.
+
+The device selection and board pin assignments are stored in
+`eeg_accelerator.qsf`. Model weight and lookup-table `.mem` files must be in the
+paths referenced by the RTL before compilation.
+
+## Sending a Test Sample through UART
+
+The MATLAB export script creates:
+
+- `host/data/test_inputs_q12.bin`
+- `host/data/test_labels.csv`
+
+Before connecting the board, the files and packet format can be checked without
+opening a COM port:
+
+```powershell
+python host\send_eeg_uart.py --dry-run
 ```
 
-Review the FPGA device, pin assignments, clock settings, and top-level entity before compilation.
+To send samples to the FPGA, replace `COM10` with the port shown in Windows
+Device Manager:
 
-### 3. Run RTL Simulations
-
-The `tb/unit/` directory contains unit testbenches for individual RTL modules.
-
-Simulation command files are located in the `quartus/` directory. Run the appropriate `.do` script using ModelSim or QuestaSim.
-
-For example:
-
-```text
-quartus/run_relu1_packed_buffer_adapter.do
+```powershell
+python host\send_eeg_uart.py --port COM10 --baud 921600
 ```
 
-Check the simulation transcript and waveforms to verify the expected behavior.
+The current hardware reuses two activation RAMs during inference, so the host
+sends one sample and waits for its response before sending the next sample. The
+complete request and response packet fields are documented in
+`docs/uart_protocol.md`.
 
-### 4. Compile the FPGA Design
+## Current Project Status
 
-In Quartus Prime:
+The repository currently contains the complete RTL hierarchy, module-level
+testbenches, full-pipeline testbenches, UART host tools, and a cycle-counting
+testbench. Parallel convolution versions are also included to reduce the number
+of inference cycles.
 
-1. Open `eeg_accelerator.qpf`.
-2. Select **Processing > Start Compilation**.
-3. Confirm that compilation completes without critical errors.
-4. Review timing analysis and resource utilization.
-5. Program the generated FPGA configuration file onto the board.
-
-## Project Status
-
-This project is under active development. RTL interfaces, model parameters, host communication protocols, and test procedures may continue to change.
+The next results to document are the final Quartus resource usage, timing
+results, FPGA-only inference latency, and accuracy comparison with the software
+model. These values are intentionally not listed here until they have been
+measured on the final build.
 
 ## License
 
-No license has been specified for this project.
+This project currently has no license file.
