@@ -1,6 +1,6 @@
 # FPGA EEG CNN-GRU Accelerator
 
-This repository is part of an undergraduate project on running an EEG
+This repository is an undergraduate project on running an EEG
 classification model on an FPGA. The model contains three CNN stages, a GRU,
 two fully connected layers, and a final argmax operation. The inference path is
 written in SystemVerilog and uses fixed-point arithmetic so that it can run on a

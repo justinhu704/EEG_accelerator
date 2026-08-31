@@ -39,3 +39,11 @@ host/data/*.bin
 host/data/*.csv
 host/results/*.csv
 tmp/
+
+# ModelSim generated file
+quartus/modelsim.ini
+
+# Ignore rtl/unit_testbenches folder
+quartus/run_relu1_packed_buffer_adapter.do
+rtl/memory/relu1_packed_buffer_adapter.sv
+tb/unit/tb_relu1_packed_buffer_adapter.sv
