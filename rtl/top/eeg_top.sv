@@ -66,7 +66,7 @@ module eeg_top #(
 );
     logic cnn_start, cnn_done;
     logic cnn_input_ready;
-    logic fc1_start, fc1_done;
+    logic fc1_start, fc1_busy, fc1_done;
     logic fc_out_start, fc_out_done;
     logic argmax_start, argmax_done;
 
@@ -128,6 +128,7 @@ module eeg_top #(
         .input_write_data(input_write_data),
         .input_ready(cnn_input_ready),
         .output_valid(), .output_addr(), .output_data(),
+        .result_read_en(fc1_start || fc1_busy),
         .result_read_addr(cnn_ram_addr[15:0]),
         .result_read_data(cnn_ram_data)
     );
@@ -143,7 +144,7 @@ module eeg_top #(
         .WEIGHT_FILE(FC1_W_FILE), .BIAS_FILE(FC1_B_FILE)
     ) u_fc1 (
         .clk(clk), .rst_n(rst_n), .start(fc1_start),
-        .busy(), .done(fc1_done),
+        .busy(fc1_busy), .done(fc1_done),
         .input_addr(fc1_input_addr), .input_data(cnn_ram_data),
         .output_valid(fc1_output_valid),
         .output_addr(fc1_output_addr), .output_data(fc1_output_data)

@@ -1,6 +1,6 @@
 # EEG FPGA UART protocol
 
-UART settings: 115200 baud, 8 data bits, no parity, 1 stop bit (8N1).
+UART settings: 921600 baud, 8 data bits, no parity, 1 stop bit (8N1).
 Multibyte integers are little-endian. The input payload contains signed Q12
 16-bit values in MATLAB column-major order.
 

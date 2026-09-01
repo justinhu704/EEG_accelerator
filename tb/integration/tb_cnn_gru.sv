@@ -71,6 +71,7 @@ module tb_cnn_gru;
         .input_write_data('0), .input_ready(input_ready),
         .output_valid(output_valid),
         .output_addr(output_addr), .output_data(output_data),
+        .result_read_en(1'b1),
         .result_read_addr(result_read_addr),
         .result_read_data(result_read_data)
     );

@@ -1,5 +1,5 @@
 # DE1-SoC onboard CLOCK_50: 50 MHz = 20.000 ns period.
-create_clock -name CLOCK_50 -period 20.000 [get_ports {CLOCK_50}]
+create_clock -name CLOCK_50 -period 16.667 [get_ports {CLOCK_50}]
 
 # KEY0/KEY1 are asynchronous board buttons. They enter explicit synchronizer
 # logic in fpga_top, so external button-to-register paths are not timed as

@@ -122,12 +122,13 @@ module streaming_maxpool #(
 
     activation_ram #(
         .DATA_W(16), .DEPTH(MAX_DEPTH), .ADDR_W(MAX_ADDR_W),
-        .MEM_FILE("")
+        .MEM_FILE(""), .USE_READ_ENABLE(1'b1)
     ) u_max_even_ram (
         .clk(clk),
         .write_en(max_even_write_en),
         .write_addr(max_even_write_addr),
         .write_data(max_even_write_data),
+        .read_en(active && !draining && input_valid),
         .read_addr(max_read_addr),
         .read_data(max_even_read_data)
     );
@@ -138,12 +139,13 @@ module streaming_maxpool #(
         if (OUT_W > 1) begin : gen_odd_max_ram
             activation_ram #(
                 .DATA_W(16), .DEPTH(MAX_DEPTH), .ADDR_W(MAX_ADDR_W),
-                .MEM_FILE("")
+                .MEM_FILE(""), .USE_READ_ENABLE(1'b1)
             ) u_max_odd_ram (
                 .clk(clk),
                 .write_en(max_odd_write_en),
                 .write_addr(max_odd_write_addr),
                 .write_data(max_odd_write_data),
+                .read_en(active && !draining && input_valid),
                 .read_addr(max_read_addr),
                 .read_data(max_odd_read_data)
             );

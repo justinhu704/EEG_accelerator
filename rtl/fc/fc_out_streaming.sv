@@ -86,16 +86,18 @@ module fc_out_streaming #(
 
     weight_rom #(
         .DATA_W(16), .DEPTH(WEIGHT_DEPTH), .ADDR_W(WEIGHT_ADDR_W),
-        .MEM_FILE(WEIGHT_FILE)
+        .MEM_FILE(WEIGHT_FILE), .USE_READ_ENABLE(1'b1)
     ) u_weight_rom (
-        .clk(clk), .addr(weight_addr), .data(weight_data)
+        .clk(clk), .read_en(start || busy),
+        .addr(weight_addr), .data(weight_data)
     );
 
     weight_rom #(
         .DATA_W(16), .DEPTH(OUTPUT_SIZE), .ADDR_W(BIAS_ADDR_W),
-        .MEM_FILE(BIAS_FILE)
+        .MEM_FILE(BIAS_FILE), .USE_READ_ENABLE(1'b1)
     ) u_bias_rom (
         .clk(clk),
+        .read_en(start || busy),
         .addr(output_issue_index[BIAS_ADDR_W-1:0]),
         .data(bias_data)
     );
@@ -121,7 +123,8 @@ module fc_out_streaming #(
             for (clear_index = 0; clear_index < OUTPUT_SIZE;
                  clear_index = clear_index + 1)
                 accumulators[clear_index] <= '0;
-        end else begin
+        // IDLE 等待期間保持 FC-out pipeline 與 accumulator。
+        end else if ((state != S_IDLE) || start) begin
             mac_valid_d1 <= (state == S_MAC);
             output_issue_valid_d1 <= (state == S_OUTPUT);
             output_valid <= 1'b0;

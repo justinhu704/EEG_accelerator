@@ -48,17 +48,21 @@ module conv_bn_relu_parallel_kh2_block #(
 
     weight_rom #(
         .DATA_W(32*LANES), .DEPTH(PACKED_WEIGHT_DEPTH),
-        .ADDR_W(PACKED_WEIGHT_ADDR_W), .MEM_FILE(PACKED_WEIGHT_FILE)
+        .ADDR_W(PACKED_WEIGHT_ADDR_W), .MEM_FILE(PACKED_WEIGHT_FILE),
+        .USE_READ_ENABLE(1'b1)
     ) u_packed_weight_rom (
-        .clk(clk), .addr(weight_addr[PACKED_WEIGHT_ADDR_W-1:0]),
+        .clk(clk), .read_en(start || busy),
+        .addr(weight_addr[PACKED_WEIGHT_ADDR_W-1:0]),
         .data(packed_weight_data)
     );
 
     weight_rom #(
         .DATA_W(16*LANES), .DEPTH(OUT_GROUPS),
-        .ADDR_W(PACKED_BIAS_ADDR_W), .MEM_FILE(PACKED_BIAS_FILE)
+        .ADDR_W(PACKED_BIAS_ADDR_W), .MEM_FILE(PACKED_BIAS_FILE),
+        .USE_READ_ENABLE(1'b1)
     ) u_packed_bias_rom (
-        .clk(clk), .addr(bias_addr[PACKED_BIAS_ADDR_W-1:0]),
+        .clk(clk), .read_en(start || busy),
+        .addr(bias_addr[PACKED_BIAS_ADDR_W-1:0]),
         .data(packed_bias_data)
     );
 

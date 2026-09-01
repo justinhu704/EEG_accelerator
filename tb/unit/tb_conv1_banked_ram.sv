@@ -24,6 +24,7 @@ module tb_conv1_banked_ram;
         .BANK_DEPTH((20 * 156 * 21) / 2)
     ) dut (
         .clk(clk), .rst_n(rst_n),
+        .read_en(1'b1),
         .write_en(write_en),
         .write_logical_addr(write_addr),
         .write_q11_data(write_data),

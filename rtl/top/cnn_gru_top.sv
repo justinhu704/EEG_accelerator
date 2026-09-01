@@ -57,6 +57,7 @@ module cnn_gru_top #(
     output logic signed [15:0] output_data,
 
     // Final GRU results occupy result RAM (RAM A) addresses 0..161.
+    input  logic               result_read_en,
     input  logic [15:0]        result_read_addr,
     output logic signed [15:0] result_read_data
 );
@@ -100,12 +101,14 @@ module cnn_gru_top #(
     logic signed [15:0] gru_data;
 
     logic [RAM_ADDR_W-1:0] ram_a_internal_read_addr;
+    logic ram_a_read_en;
     logic signed [15:0] ram_a_read_data;
     logic signed [15:0] conv1_bank_data_kh0, conv1_bank_data_kh1;
     logic signed [15:0] shared_pool2_gru_data;
     logic ram_a_write_en;
     logic [RAM_ADDR_W-1:0] ram_a_write_addr;
     logic signed [15:0] ram_a_write_data;
+    logic conv1_bank_read_en;
 
     always_comb begin
         conv1_start = (state == S_IDLE) && start;
@@ -121,13 +124,23 @@ module cnn_gru_top #(
 
     // Select which engine owns each synchronous RAM read port.
     always_comb begin
-        if ((state == S_START_CONV3) || (state == S_RUN_CONV3))
+        ram_a_read_en = result_read_en;
+        if ((state == S_START_CONV3) || (state == S_RUN_CONV3)) begin
             ram_a_internal_read_addr = conv3_input_addr[15:0];
-        else if (state == S_RUN_CONV1)
+            ram_a_read_en = 1'b1;
+        end else if ((state == S_RUN_CONV1) || conv1_start) begin
             ram_a_internal_read_addr = conv1_input_addr[15:0];
-        else
+            ram_a_read_en = 1'b1;
+        end else begin
             ram_a_internal_read_addr = result_read_addr;
+        end
+    end
 
+    // Bank RAM is read only by Conv2 and GRU. Pool2 uses its write ports.
+    always_comb begin
+        conv1_bank_read_en =
+            (state == S_START_CONV2) || (state == S_RUN_CONV2) ||
+            (state == S_START_GRU)   || (state == S_RUN_GRU);
     end
 
     // =======================================
@@ -152,11 +165,12 @@ module cnn_gru_top #(
 
     activation_ram #(
         .DATA_W(16), .DEPTH(RAM_A_DEPTH), .ADDR_W(RAM_ADDR_W),
-        .MEM_FILE(INPUT_FILE)
+        .MEM_FILE(INPUT_FILE), .USE_READ_ENABLE(1'b1)
     ) u_ram_a (
         .clk(clk),
         .write_en(ram_a_write_en),
         .write_addr(ram_a_write_addr), .write_data(ram_a_write_data),
+        .read_en(ram_a_read_en),
         .read_addr(ram_a_internal_read_addr), .read_data(ram_a_read_data)
     );
 
@@ -169,6 +183,7 @@ module cnn_gru_top #(
         .BANK_DEPTH(CONV1_SIZE / 2)
     ) u_conv1_ram (
         .clk(clk), .rst_n(rst_n),
+        .read_en(conv1_bank_read_en),
         .write_en(conv1_valid),
         .write_logical_addr(conv1_addr[RAM_ADDR_W-1:0]),
         .write_q11_data(conv1_data),
@@ -377,17 +392,19 @@ module conv_bn_relu_block #(
 
     weight_rom #(
         .DATA_W(16), .DEPTH(WEIGHT_DEPTH), .ADDR_W(WEIGHT_ADDR_W),
-        .MEM_FILE(WEIGHT_FILE)
+        .MEM_FILE(WEIGHT_FILE), .USE_READ_ENABLE(1'b1)
     ) u_weight_rom (
-        .clk(clk), .addr(weight_addr[WEIGHT_ADDR_W-1:0]),
+        .clk(clk), .read_en(start || busy),
+        .addr(weight_addr[WEIGHT_ADDR_W-1:0]),
         .data(weight_data)
     );
 
     weight_rom #(
         .DATA_W(16), .DEPTH(BIAS_DEPTH), .ADDR_W(BIAS_ADDR_W),
-        .MEM_FILE(BIAS_FILE)
+        .MEM_FILE(BIAS_FILE), .USE_READ_ENABLE(1'b1)
     ) u_bias_rom (
-        .clk(clk), .addr(bias_addr[BIAS_ADDR_W-1:0]),
+        .clk(clk), .read_en(start || busy),
+        .addr(bias_addr[BIAS_ADDR_W-1:0]),
         .data(bias_data)
     );
 
@@ -497,17 +514,21 @@ module conv_bn_relu_parallel_block #(
 
     weight_rom #(
         .DATA_W(16*LANES), .DEPTH(PACKED_WEIGHT_DEPTH),
-        .ADDR_W(PACKED_WEIGHT_ADDR_W), .MEM_FILE(PACKED_WEIGHT_FILE)
+        .ADDR_W(PACKED_WEIGHT_ADDR_W), .MEM_FILE(PACKED_WEIGHT_FILE),
+        .USE_READ_ENABLE(1'b1)
     ) u_packed_weight_rom (
-        .clk(clk), .addr(weight_addr[PACKED_WEIGHT_ADDR_W-1:0]),
+        .clk(clk), .read_en(start || busy),
+        .addr(weight_addr[PACKED_WEIGHT_ADDR_W-1:0]),
         .data(packed_weight_data)
     );
 
     weight_rom #(
         .DATA_W(16*LANES), .DEPTH(OUT_GROUPS),
-        .ADDR_W(PACKED_BIAS_ADDR_W), .MEM_FILE(PACKED_BIAS_FILE)
+        .ADDR_W(PACKED_BIAS_ADDR_W), .MEM_FILE(PACKED_BIAS_FILE),
+        .USE_READ_ENABLE(1'b1)
     ) u_packed_bias_rom (
-        .clk(clk), .addr(bias_addr[PACKED_BIAS_ADDR_W-1:0]),
+        .clk(clk), .read_en(start || busy),
+        .addr(bias_addr[PACKED_BIAS_ADDR_W-1:0]),
         .data(packed_bias_data)
     );
 

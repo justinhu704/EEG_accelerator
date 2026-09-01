@@ -12,6 +12,8 @@ module conv1_banked_ram #(
     input  logic                       clk,
     input  logic                       rst_n,
 
+    input  logic                       read_en,
+
     input  logic                       write_en,
     input  logic [LOG_ADDR_W-1:0]      write_logical_addr,
     input  logic signed [15:0]         write_q11_data,
@@ -150,15 +152,18 @@ module conv1_banked_ram #(
         if (odd_write_en)
             odd_height_mem[odd_write_addr] <= odd_write_data;
 
-        even_read_data <= even_height_mem[even_read_addr];
-        odd_read_data  <= odd_height_mem[odd_read_addr];
+        // Conv2/GRU 未使用 bank RAM 時保持輸出，降低兩個 M10K 的切換。
+        if (read_en) begin
+            even_read_data <= even_height_mem[even_read_addr];
+            odd_read_data  <= odd_height_mem[odd_read_addr];
+        end
     end
 
     // 與 RAM 同一個時脈延遲
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             kh0_is_odd_d1 <= 1'b0;
-        else
+        else if (read_en)
             kh0_is_odd_d1 <= read_logical_addr_kh0[0];
     end
 

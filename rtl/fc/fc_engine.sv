@@ -70,9 +70,11 @@ module fc_engine #(
         .DATA_W(16),
         .DEPTH(WEIGHT_DEPTH),
         .ADDR_W(WEIGHT_ADDR_W),
-        .MEM_FILE(WEIGHT_FILE)
+        .MEM_FILE(WEIGHT_FILE),
+        .USE_READ_ENABLE(1'b1)
     ) u_weight_rom (
         .clk(clk),
+        .read_en(start || busy),
         .addr(weight_addr_full[WEIGHT_ADDR_W-1:0]),
         .data(weight_data)
     );
@@ -81,9 +83,11 @@ module fc_engine #(
         .DATA_W(16),
         .DEPTH(OUTPUT_SIZE),
         .ADDR_W(BIAS_ADDR_W),
-        .MEM_FILE(BIAS_FILE)
+        .MEM_FILE(BIAS_FILE),
+        .USE_READ_ENABLE(1'b1)
     ) u_bias_rom (
         .clk(clk),
+        .read_en(start || busy),
         .addr(output_index[BIAS_ADDR_W-1:0]),
         .data(bias_data)
     );
@@ -120,7 +124,8 @@ module fc_engine #(
             input_index <= 0;
             output_index <= 0;
             data_valid <= 1'b0;
-        end else begin
+        // IDLE 等待期間保持 FC1 暫存器，不改變任何運算 state/cycle。
+        end else if ((state != S_IDLE) || start) begin
             data_valid <= (state == S_STREAM);
 
             case (state)

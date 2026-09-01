@@ -384,7 +384,8 @@ module gru_engine_pipeline #(
                 gated_hidden[loop_index] <= '0;
                 candidate_accumulator[loop_index] <= '0;
             end
-        end else begin
+        // IDLE 等待 UART 時保持所有 GRU pipeline 暫存器。
+        end else if ((state != S_IDLE) || start) begin
             output_valid <= 1'b0;
             activation_lut_valid <= 1'b0;
 
