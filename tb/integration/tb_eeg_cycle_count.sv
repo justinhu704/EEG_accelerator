@@ -8,7 +8,7 @@
 module tb_eeg_cycle_count;
     localparam int MAX_CYCLES = 20_100_000;
     localparam int EXPECTED_LOGITS = 105;
-    localparam real CLOCK_PERIOD_NS = 20.0;
+    parameter real CLOCK_PERIOD_NS = 20.0;
     localparam real CLOCK_FREQ_MHZ = 1000.0 / CLOCK_PERIOD_NS;
 
     logic clk, rst_n, start;

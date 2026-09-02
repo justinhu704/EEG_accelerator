@@ -39,6 +39,7 @@ host/data/*.bin
 host/data/*.csv
 host/results/*.csv
 tmp/
+power/*.vcd
 
 # ModelSim generated file
 quartus/modelsim.ini
