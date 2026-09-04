@@ -60,13 +60,13 @@ module gru_engine_pipeline #(
                                     ? 1 : $clog2(RECURRENT_WEIGHT_DEPTH);
 
     // Q formats from the verified MATLAB export:
-    // x=F13, h/r/z/candidate=F15, Wr=F15, Wz=F14, Wh=F15,
-    // Ur=F15, Uz=F15, Uh=F14, biases=F15, LUT input=F9.
+    // DS-Conv2 模型：x=F12，h/r/z/candidate=F15，Wr/Wz/Ur=F14，
+    // Wh/Uz/Uh=F15，biases=F15，LUT input=F9。
     // These values come from EEG_CNN_GRU_quantized.mat; the older
     // fixed_point_pkg table does not describe the current exported files.
     localparam int GATE_ACC_F = 30;
     localparam int LUT_INPUT_F = 9;
-    localparam int CAND_ACC_F = 44;
+    localparam int CAND_ACC_F = 45;
 
     logic signed [15:0] wr_mem [0:INPUT_WEIGHT_DEPTH-1];
     logic signed [15:0] wz_mem [0:INPUT_WEIGHT_DEPTH-1];
@@ -416,12 +416,12 @@ module gru_engine_pipeline #(
             // 乘法結果已經過暫存，這一級只保留64-bit累加器加法。
             if (gate_input_valid_s2) begin
                 reset_accumulator <= reset_accumulator
-                                   + ($signed(wr_product_s2) <<< 2);
+                                   + ($signed(wr_product_s2) <<< 4);
                 update_accumulator <= update_accumulator
-                                    + ($signed(wz_product_s2) <<< 3);
+                                    + ($signed(wz_product_s2) <<< 4);
             end else if (gate_recurrent_valid_s2) begin
                 reset_accumulator <= reset_accumulator
-                                   + $signed(ur_product_s2);
+                                   + ($signed(ur_product_s2) <<< 1);
                 update_accumulator <= update_accumulator
                                     + $signed(uz_product_s2);
             end
@@ -454,7 +454,7 @@ module gru_engine_pipeline #(
                 candidate_accumulator[wh_neuron_s2]
                     <= candidate_accumulator[wh_neuron_s2]
                      + ($signed({{32{wh_product_s2[31]}}, wh_product_s2})
-                        <<< 16);
+                        <<< 18);
             end else if (uh_valid_s2) begin
                 candidate_accumulator[uh_neuron_s2]
                     <= candidate_accumulator[uh_neuron_s2]
@@ -684,7 +684,7 @@ module gru_engine_pipeline #(
                          loop_index = loop_index + 1) begin
                         candidate_accumulator[loop_index]
                             <= $signed({{48{bh_mem[loop_index][15]}},
-                                        bh_mem[loop_index]}) <<< 29;
+                                        bh_mem[loop_index]}) <<< 30;
                     end
                     wh_addr <= '0;
                     wh_feature <= '0;

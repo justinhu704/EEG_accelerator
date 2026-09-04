@@ -6,35 +6,34 @@
 // RAM A -> Conv3/BN3/ReLU3/streaming Pool2   -> reused Conv1 banks
 // Reused Conv1 banks -> GRU                  -> RAM A
 module cnn_gru_top #(
-    parameter INPUT_FILE   = "mem/golden/q_in_act.mem",
-    parameter CONV1_W_FILE = "mem/weights/conv1_W.mem",
-    parameter CONV1_B_FILE = "mem/weights/conv1_b.mem",
-    parameter CONV1_PACKED_W_FILE = "mem/weights/conv1_W_x3.mem",
-    parameter CONV1_PACKED_B_FILE = "mem/weights/conv1_b_x3.mem",
-    parameter BN1_A_FILE   = "mem/weights/bn1_A.mem",
-    parameter BN1_B_FILE   = "mem/weights/bn1_B.mem",
-    parameter CONV2_W_FILE = "mem/weights/conv2_W.mem",
-    parameter CONV2_B_FILE = "mem/weights/conv2_b.mem",
-    parameter CONV2_PACKED_W_FILE = "mem/weights/conv2_W_x5.mem",
-    parameter CONV2_KH2_PACKED_W_FILE = "mem/weights/conv2_W_x5_kh2.mem",
-    parameter CONV2_PACKED_B_FILE = "mem/weights/conv2_b_x5.mem",
-    parameter BN2_A_FILE   = "mem/weights/bn2_A.mem",
-    parameter BN2_B_FILE   = "mem/weights/bn2_B.mem",
-    parameter CONV3_W_FILE = "mem/weights/conv3_W.mem",
-    parameter CONV3_B_FILE = "mem/weights/conv3_b.mem",
-    parameter CONV3_PACKED_W_FILE = "mem/weights/conv3_W_x3.mem",
-    parameter CONV3_PACKED_B_FILE = "mem/weights/conv3_b_x3.mem",
-    parameter BN3_A_FILE   = "mem/weights/bn3_A.mem",
-    parameter BN3_B_FILE   = "mem/weights/bn3_B.mem",
-    parameter GRU_WR_FILE  = "mem/weights/gru_Wr.mem",
-    parameter GRU_WZ_FILE  = "mem/weights/gru_Wz.mem",
-    parameter GRU_WH_FILE  = "mem/weights/gru_Wh.mem",
-    parameter GRU_UR_FILE  = "mem/weights/gru_Ur.mem",
-    parameter GRU_UZ_FILE  = "mem/weights/gru_Uz.mem",
-    parameter GRU_UH_FILE  = "mem/weights/gru_Uh.mem",
-    parameter GRU_BR_FILE  = "mem/weights/gru_br.mem",
-    parameter GRU_BZ_FILE  = "mem/weights/gru_bz.mem",
-    parameter GRU_BH_FILE  = "mem/weights/gru_bh.mem",
+    parameter INPUT_FILE   = "mem/dsconv2/board/ram_a_sample0_q12.mem",
+    parameter CONV1_W_FILE = "mem/dsconv2/weights/conv1_W.mem",
+    parameter CONV1_B_FILE = "mem/dsconv2/weights/conv1_b.mem",
+    parameter CONV1_PACKED_W_FILE = "mem/dsconv2/weights/conv1_W_x3.mem",
+    parameter CONV1_PACKED_B_FILE = "mem/dsconv2/weights/conv1_b_x3.mem",
+    parameter BN1_A_FILE   = "mem/dsconv2/weights/bn1_A.mem",
+    parameter BN1_B_FILE   = "mem/dsconv2/weights/bn1_B.mem",
+    parameter CONV2_DW_W_FILE = "mem/dsconv2/weights/conv2_depthwise_W_kh2.mem",
+    parameter CONV2_DW_B_FILE = "mem/dsconv2/weights/conv2_depthwise_b.mem",
+    parameter CONV2_PW_W_FILE = "mem/dsconv2/weights/conv2_pointwise_W_x5.mem",
+    parameter CONV2_PW_B_FILE = "mem/dsconv2/weights/conv2_pointwise_b_x5.mem",
+    parameter BN2_A_FILE   = "mem/dsconv2/weights/bn2_A.mem",
+    parameter BN2_B_FILE   = "mem/dsconv2/weights/bn2_B.mem",
+    parameter CONV3_W_FILE = "mem/dsconv2/weights/conv3_W.mem",
+    parameter CONV3_B_FILE = "mem/dsconv2/weights/conv3_b.mem",
+    parameter CONV3_PACKED_W_FILE = "mem/dsconv2/weights/conv3_W_x3.mem",
+    parameter CONV3_PACKED_B_FILE = "mem/dsconv2/weights/conv3_b_x3.mem",
+    parameter BN3_A_FILE   = "mem/dsconv2/weights/bn3_A.mem",
+    parameter BN3_B_FILE   = "mem/dsconv2/weights/bn3_B.mem",
+    parameter GRU_WR_FILE  = "mem/dsconv2/weights/gru_Wr.mem",
+    parameter GRU_WZ_FILE  = "mem/dsconv2/weights/gru_Wz.mem",
+    parameter GRU_WH_FILE  = "mem/dsconv2/weights/gru_Wh.mem",
+    parameter GRU_UR_FILE  = "mem/dsconv2/weights/gru_Ur.mem",
+    parameter GRU_UZ_FILE  = "mem/dsconv2/weights/gru_Uz.mem",
+    parameter GRU_UH_FILE  = "mem/dsconv2/weights/gru_Uh.mem",
+    parameter GRU_BR_FILE  = "mem/dsconv2/weights/gru_br.mem",
+    parameter GRU_BZ_FILE  = "mem/dsconv2/weights/gru_bz.mem",
+    parameter GRU_BH_FILE  = "mem/dsconv2/weights/gru_bh.mem",
     parameter SIGMOID_FILE = "mem/lut/sigmoid_half_lut_q15.mem",
     parameter TANH_FILE    = "mem/lut/tanh_half_lut_q15.mem"
 ) (
@@ -85,6 +84,10 @@ module cnn_gru_top #(
     logic conv2_start, conv2_busy, conv2_valid;
     logic [31:0] conv2_input_addr, conv2_input_addr_kh1, conv2_addr;
     logic signed [15:0] conv2_data;
+    logic conv2_last;
+    logic [4:0] conv2_h;
+    logic [7:0] conv2_w;
+    logic [4:0] conv2_channel;
     logic conv3_start, conv3_busy, conv3_valid;
     logic [31:0] conv3_input_addr, conv3_addr;
     logic signed [15:0] conv3_data;
@@ -218,14 +221,17 @@ module cnn_gru_top #(
         .output_data(conv1_data)
     );
 
-    conv_bn_relu_parallel_kh2_block #(
+    ds_conv2_bn_relu_block #(
         .IN_H(20), .IN_W(156), .IN_CH(21),
         .K_H(2), .K_W(5), .OUT_CH(20), .LANES(5),
-        .CONV_BIAS_SHIFT(10), .CONV_OUTPUT_SHIFT(15),
-        .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(14),
-        .RELU_LEFT_SHIFT(1),
-        .PACKED_WEIGHT_FILE(CONV2_KH2_PACKED_W_FILE),
-        .PACKED_BIAS_FILE(CONV2_PACKED_B_FILE),
+        .DW_BIAS_SHIFT(10), .DW_OUTPUT_SHIFT(15),
+        .PW_BIAS_SHIFT(10), .PW_OUTPUT_SHIFT(15),
+        .BN_BIAS_SHIFT(10), .BN_OUTPUT_SHIFT(13),
+        .RELU_LEFT_SHIFT(0),
+        .DW_WEIGHT_FILE(CONV2_DW_W_FILE),
+        .DW_BIAS_FILE(CONV2_DW_B_FILE),
+        .PW_WEIGHT_FILE(CONV2_PW_W_FILE),
+        .PW_BIAS_FILE(CONV2_PW_B_FILE),
         .BN_A_FILE(BN2_A_FILE), .BN_B_FILE(BN2_B_FILE)
     ) u_conv2_bn_relu (
         .clk(clk), .rst_n(rst_n), .start(conv2_start),
@@ -234,18 +240,22 @@ module cnn_gru_top #(
         .input_addr_kh1(conv2_input_addr_kh1),
         .input_data_kh0(conv1_bank_data_kh0),
         .input_data_kh1(conv1_bank_data_kh1),
-        .output_valid(conv2_valid), .output_addr(conv2_addr),
+        .output_valid(conv2_valid), .output_last(conv2_last),
+        .output_addr(conv2_addr), .output_h(conv2_h),
+        .output_w(conv2_w), .output_channel(conv2_channel),
         .output_data(conv2_data)
     );
 
-    streaming_maxpool #(
+    dsconv_streaming_pool #(
         .IN_H(19), .IN_W(152), .IN_CH(20),
-        .POOL_W(10), .STRIDE_W(8), .LANES(5),
-        .INPUT_F(13), .OUTPUT_F(13)
+        .POOL_W(10), .STRIDE_W(8),
+        .INPUT_F(11), .OUTPUT_F(11)
     ) u_pool1 (
         .clk(clk), .rst_n(rst_n), .start(pool1_start),
         .busy(pool1_busy), .done(pool1_done),
-        .input_valid(conv2_valid), .input_data(conv2_data),
+        .input_valid(conv2_valid), .input_last(conv2_last),
+        .input_data(conv2_data), .input_h(conv2_h),
+        .input_w(conv2_w), .input_channel(conv2_channel),
         .output_valid(pool1_valid), .output_addr(pool1_addr),
         .output_data(pool1_data)
     );
@@ -253,8 +263,8 @@ module cnn_gru_top #(
     conv_bn_relu_parallel_block #(
         .IN_H(19), .IN_W(18), .IN_CH(20),
         .K_H(2), .K_W(5), .OUT_CH(15), .LANES(3),
-        .CONV_BIAS_SHIFT(12), .CONV_OUTPUT_SHIFT(17),
-        .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(13),
+        .CONV_BIAS_SHIFT(11), .CONV_OUTPUT_SHIFT(17),
+        .BN_BIAS_SHIFT(10), .BN_OUTPUT_SHIFT(12),
         .RELU_LEFT_SHIFT(0),
         .PACKED_WEIGHT_FILE(CONV3_PACKED_W_FILE),
         .PACKED_BIAS_FILE(CONV3_PACKED_B_FILE),
@@ -270,7 +280,7 @@ module cnn_gru_top #(
     streaming_maxpool #(
         .IN_H(18), .IN_W(14), .IN_CH(15),
         .POOL_W(10), .STRIDE_W(8), .LANES(3),
-        .INPUT_F(12), .OUTPUT_F(13)
+        .INPUT_F(12), .OUTPUT_F(12)
     ) u_pool2 (
         .clk(clk), .rst_n(rst_n), .start(pool2_start),
         .busy(pool2_busy), .done(pool2_done),
