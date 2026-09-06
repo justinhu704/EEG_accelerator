@@ -34,5 +34,22 @@ vlog -sv ../rtl/top/eeg_controller.sv
 vlog -sv ../rtl/top/eeg_top.sv
 vlog -sv ../tb/integration/tb_eeg_cycle_count.sv
 
-vsim work.tb_eeg_cycle_count
+# Read CLOCK_50 period from the Quartus SDC so timing simulation and the
+# reported MHz/ms values follow the same setting automatically.
+set sdc_file "eeg_accelerator.sdc"
+set sdc_fp [open $sdc_file r]
+set sdc_text [read $sdc_fp]
+close $sdc_fp
+
+if {![regexp {create_clock[^\r\n]*-name[ \t]+CLOCK_50[^\r\n]*-period[ \t]+([0-9.]+)} \
+      $sdc_text sdc_match clock_period_ns]} {
+    puts "ERROR: Cannot find CLOCK_50 period in $sdc_file"
+    quit -code 1
+}
+
+set clock_freq_mhz [expr {1000.0 / $clock_period_ns}]
+puts "SDC CLOCK_50 period: $clock_period_ns ns"
+puts "Simulation clock   : $clock_freq_mhz MHz"
+
+vsim -gCLOCK_PERIOD_NS=$clock_period_ns work.tb_eeg_cycle_count
 run -all

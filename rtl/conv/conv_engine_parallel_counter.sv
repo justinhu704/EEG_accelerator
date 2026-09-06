@@ -54,6 +54,7 @@ module conv_engine_parallel_counter #(
 
     // Constant input-address strides for the current loop order:
     // kh (fastest) -> kw -> input channel.
+    // 每次加多少
     localparam int INPUT_KH_STEP = 1;
     localparam int INPUT_KW_STEP = IN_H - (K_H - 1);
     localparam int INPUT_CH_STEP = IN_H * IN_W
@@ -107,6 +108,7 @@ module conv_engine_parallel_counter #(
     genvar lane;
     generate
         for (lane = 0; lane < LANES; lane = lane + 1) begin : gen_lanes
+            // 切分輸入資料
             assign weight_lane[lane] = weight_data[(16*lane) +: 16];
             assign bias_lane[lane] = bias_data[(16*lane) +: 16];
 
@@ -145,11 +147,15 @@ module conv_engine_parallel_counter #(
         output_valid = (state == S_OUTPUT) && lane_is_valid;
 
         selected_accumulator = accumulators[output_lane_count];
+
+        // bias 量化
         selected_bias = bias_lane[output_lane_count];
         bias_extended = {{32{selected_bias[15]}}, selected_bias};
         bias_aligned = bias_extended <<< BIAS_SHIFT;
-        // add bias
+
+        // 加上 bias
         sum_with_bias = selected_accumulator + bias_aligned;
+        // 進行 scaling
         scaled_result = sum_with_bias >>> OUTPUT_SHIFT;
         output_data = output_valid ? saturated_result : 16'sd0;
     end
@@ -249,13 +255,14 @@ module conv_engine_parallel_counter #(
                 // K_H*K_W*IN_CH products are complete for all LANES.
                 // K_H*K_W*IN_CH 筆 mac 計算完畢，依次輸出
                 S_OUTPUT: begin
+                    // 輸出 lane 筆 mac 計算結果
                     if ((output_lane_count < LANES-1) &&
                         (output_channel + 1 < OUT_CH)) begin
                         output_lane_count <= output_lane_count + 1'b1;
                     // 所有 lane 結束
                     end else begin
-                        // 依次輸出 LANES 筆 output_channel_addr
                         output_lane_count <= '0;
+                        // 將 height 下移，準備下一輪 mac
                         if (out_h_count < OUT_H-1) begin
                             out_h_count <= out_h_count + 1'b1;
                             input_window_base <= input_window_base + 1'b1;
@@ -276,6 +283,9 @@ module conv_engine_parallel_counter #(
                                 if (out_group_count < OUT_GROUPS-1) begin
                                     out_group_count
                                         <= out_group_count + 1'b1;
+                                    
+                                    // 執行下一 group 的 mac 計算
+                                    // 將下一組 weight 移到下一組 group 的開頭
                                     weight_group_base
                                         <= weight_group_base + KERNEL_WORDS;
                                     state <= S_CLEAR;

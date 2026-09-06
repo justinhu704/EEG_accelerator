@@ -58,6 +58,7 @@ module bn_affine #(
         end
     end
 
+    // 正負號擴展
     always_comb begin
         stage1_B_extended = {{32{stage1_B[15]}}, stage1_B};
     end
@@ -79,12 +80,14 @@ module bn_affine #(
 
     // Scale the result and clamp it to signed 16-bit.
     always_comb begin
+        // 擴展成 48 bits
         stage2_product_extended =
             {{16{stage2_product[31]}}, stage2_product};
         aligned_sum = stage2_product_extended + stage2_B_aligned;
         scaled_sum  = aligned_sum >>> OUTPUT_SHIFT;
     end
 
+    // 進行飽和
     sat16 u_sat16 (
         .value_in  (scaled_sum),
         .value_out (saturated_out)
