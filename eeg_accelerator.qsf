@@ -147,7 +147,7 @@ set_location_assignment PIN_AC18 -to UART_TXD
 
 
 
-set_global_assignment -name POWER_USE_INPUT_FILES OFF
+set_global_assignment -name POWER_USE_INPUT_FILES ON
 set_global_assignment -name POWER_INPUT_FILE_NAME power/eeg_active_50mhz.vcd -section_id eeg_active_50mhz.vcd
 set_global_assignment -name POWER_INPUT_FILE_TYPE VCD -section_id eeg_active_50mhz.vcd
 
