@@ -11,7 +11,8 @@ module conv_engine_parallel_counter #(
     parameter int OUT_W  = IN_W - K_W + 1,
     parameter int LANES  = 4,
     parameter int BIAS_SHIFT   = 10,
-    parameter int OUTPUT_SHIFT = 15
+    parameter int OUTPUT_SHIFT = 15,
+    parameter bit REGISTER_MAC_INPUTS = 1'b0
 ) (
     input  logic                         clk,
     input  logic                         rst_n,
@@ -67,6 +68,7 @@ module conv_engine_parallel_counter #(
         S_CLEAR,
         S_STREAM,
         S_DRAIN,
+        S_DRAIN_PIPE,
         S_OUTPUT,
         S_DONE
     } state_t;
@@ -89,9 +91,16 @@ module conv_engine_parallel_counter #(
     logic [WEIGHT_ADDR_W-1:0] weight_addr_count;
 
     logic data_valid;
+    logic data_valid_d;
     logic clear_acc;
     logic mac_en;
     logic lane_is_valid;
+
+    // Conv1 可選擇先暫存 RAM/ROM 輸出，切開記憶體到 MAC 的長路徑。
+    logic signed [15:0] mac_input_data;
+    logic signed [15:0] input_data_d;
+    logic signed [(16*LANES)-1:0] mac_weight_data;
+    logic signed [(16*LANES)-1:0] weight_data_d;
 
     logic signed [15:0] weight_lane [0:LANES-1];
     logic signed [15:0] bias_lane [0:LANES-1];
@@ -109,13 +118,13 @@ module conv_engine_parallel_counter #(
     generate
         for (lane = 0; lane < LANES; lane = lane + 1) begin : gen_lanes
             // 切分輸入資料
-            assign weight_lane[lane] = weight_data[(16*lane) +: 16];
+            assign weight_lane[lane] = mac_weight_data[(16*lane) +: 16];
             assign bias_lane[lane] = bias_data[(16*lane) +: 16];
 
             pe_mac u_mac (
                 .clk(clk), .rst_n(rst_n),
                 .clear_acc(clear_acc), .mac_en(mac_en),
-                .data_in(input_data), .weight_in(weight_lane[lane]),
+                .data_in(mac_input_data), .weight_in(weight_lane[lane]),
                 .accumulator(accumulators[lane])
             );
         end
@@ -143,7 +152,11 @@ module conv_engine_parallel_counter #(
         busy = (state != S_IDLE) && (state != S_DONE);
         done = (state == S_DONE);
         clear_acc = (state == S_CLEAR);
-        mac_en = data_valid;
+
+        mac_input_data = REGISTER_MAC_INPUTS ? input_data_d : input_data;
+        mac_weight_data = REGISTER_MAC_INPUTS ? weight_data_d : weight_data;
+        mac_en = REGISTER_MAC_INPUTS ? data_valid_d : data_valid;
+        
         output_valid = (state == S_OUTPUT) && lane_is_valid;
 
         selected_accumulator = accumulators[output_lane_count];
@@ -180,9 +193,23 @@ module conv_engine_parallel_counter #(
             weight_group_base <= '0;
             weight_addr_count <= '0;
             data_valid <= 1'b0;
+            data_valid_d <= 1'b0;
+            input_data_d <= '0;
+            weight_data_d <= '0;
         end else begin
             // Activation RAM and packed weight ROM both have one-clock latency.
             data_valid <= (state == S_STREAM);
+
+            // 只有啟用時才增加一級 MAC 輸入 pipeline。
+            if (REGISTER_MAC_INPUTS) begin
+                data_valid_d <= data_valid;
+                if (data_valid) begin
+                    input_data_d  <= input_data;
+                    weight_data_d <= weight_data;
+                end
+            end else begin
+                data_valid_d <= 1'b0;
+            end
 
             case (state)
                 S_IDLE: begin
@@ -248,6 +275,15 @@ module conv_engine_parallel_counter #(
 
                 // Consume the final synchronous memory result.
                 S_DRAIN: begin
+                    output_lane_count <= '0;
+                    if (REGISTER_MAC_INPUTS)
+                        state <= S_DRAIN_PIPE;
+                    else
+                        state <= S_OUTPUT;
+                end
+
+                // 等待暫存後的最後一筆乘積完成累加。
+                S_DRAIN_PIPE: begin
                     output_lane_count <= '0;
                     state <= S_OUTPUT;
                 end

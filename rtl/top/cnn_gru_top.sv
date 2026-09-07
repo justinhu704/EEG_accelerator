@@ -207,6 +207,7 @@ module cnn_gru_top #(
     conv_bn_relu_parallel_block #(
         .IN_H(21), .IN_W(160), .IN_CH(1),
         .K_H(2), .K_W(5), .OUT_CH(21), .LANES(3),
+        .REGISTER_MAC_INPUTS(1'b1),
         .CONV_BIAS_SHIFT(12), .CONV_OUTPUT_SHIFT(14),
         .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(13),
         .RELU_LEFT_SHIFT(0),
@@ -484,6 +485,7 @@ module conv_bn_relu_parallel_block #(
     parameter int OUT_H  = IN_H - K_H + 1,
     parameter int OUT_W  = IN_W - K_W + 1,
     parameter int LANES  = 4,
+    parameter bit REGISTER_MAC_INPUTS = 1'b0,
     parameter int CONV_BIAS_SHIFT   = 10,
     parameter int CONV_OUTPUT_SHIFT = 15,
     parameter int BN_BIAS_SHIFT     = 11,
@@ -547,7 +549,8 @@ module conv_bn_relu_parallel_block #(
         .K_H(K_H), .K_W(K_W), .OUT_CH(OUT_CH),
         .OUT_H(OUT_H), .OUT_W(OUT_W), .LANES(LANES),
         .BIAS_SHIFT(CONV_BIAS_SHIFT),
-        .OUTPUT_SHIFT(CONV_OUTPUT_SHIFT)
+        .OUTPUT_SHIFT(CONV_OUTPUT_SHIFT),
+        .REGISTER_MAC_INPUTS(REGISTER_MAC_INPUTS)
     ) u_conv (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(conv_done_unused),
