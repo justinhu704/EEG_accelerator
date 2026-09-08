@@ -35,6 +35,7 @@ module fc_engine #(
         S_CLEAR,
         S_STREAM,
         S_DRAIN,
+        S_DRAIN_PIPE,
         S_OUTPUT,
         S_DONE
     } state_t;
@@ -43,7 +44,12 @@ module fc_engine #(
     integer input_index;
     integer output_index;
     logic data_valid;
+    logic data_valid_d;
     logic clear_acc;
+
+    // 暫存 RAM 與 ROM 輸出，切開記憶體到 MAC 的長路徑。
+    logic signed [15:0] input_data_d;
+    logic signed [15:0] weight_data_d;
 
     logic [31:0] weight_addr_full;
     logic signed [15:0] weight_data;
@@ -95,9 +101,9 @@ module fc_engine #(
     pe_mac u_mac (
         .clk(clk), .rst_n(rst_n),
         .clear_acc(clear_acc),
-        .mac_en(data_valid),
-        .data_in(input_data),
-        .weight_in(weight_data),
+        .mac_en(data_valid_d),
+        .data_in(input_data_d),
+        .weight_in(weight_data_d),
         .accumulator(accumulator)
     );
 
@@ -124,9 +130,17 @@ module fc_engine #(
             input_index <= 0;
             output_index <= 0;
             data_valid <= 1'b0;
+            data_valid_d <= 1'b0;
+            input_data_d <= '0;
+            weight_data_d <= '0;
         // IDLE 等待期間保持 FC1 暫存器，不改變任何運算 state/cycle。
         end else if ((state != S_IDLE) || start) begin
             data_valid <= (state == S_STREAM);
+            data_valid_d <= data_valid;
+            if (data_valid) begin
+                input_data_d <= input_data;
+                weight_data_d <= weight_data;
+            end
 
             case (state)
                 S_IDLE: begin
@@ -153,6 +167,10 @@ module fc_engine #(
 
                 // 累積最後一個輸入地址返回的值。
                 S_DRAIN:
+                    state <= S_DRAIN_PIPE;
+
+                // 等待暫存後的最後一筆乘積完成累加。
+                S_DRAIN_PIPE:
                     state <= S_OUTPUT;
 
                 S_OUTPUT: begin

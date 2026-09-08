@@ -207,6 +207,8 @@ module cnn_gru_top #(
     conv_bn_relu_parallel_block #(
         .IN_H(21), .IN_W(160), .IN_CH(1),
         .K_H(2), .K_W(5), .OUT_CH(21), .LANES(3),
+        .REGISTER_MAC_INPUTS(1'b1),
+        .REGISTER_OUTPUT(1'b1),
         .CONV_BIAS_SHIFT(12), .CONV_OUTPUT_SHIFT(14),
         .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(13),
         .RELU_LEFT_SHIFT(0),
@@ -263,6 +265,7 @@ module cnn_gru_top #(
     conv_bn_relu_parallel_block #(
         .IN_H(19), .IN_W(18), .IN_CH(20),
         .K_H(2), .K_W(5), .OUT_CH(15), .LANES(3),
+        .REGISTER_MAC_INPUTS(1'b1),
         .CONV_BIAS_SHIFT(11), .CONV_OUTPUT_SHIFT(17),
         .BN_BIAS_SHIFT(10), .BN_OUTPUT_SHIFT(12),
         .RELU_LEFT_SHIFT(0),
@@ -484,6 +487,8 @@ module conv_bn_relu_parallel_block #(
     parameter int OUT_H  = IN_H - K_H + 1,
     parameter int OUT_W  = IN_W - K_W + 1,
     parameter int LANES  = 4,
+    parameter bit REGISTER_MAC_INPUTS = 1'b0,
+    parameter bit REGISTER_OUTPUT = 1'b0,
     parameter int CONV_BIAS_SHIFT   = 10,
     parameter int CONV_OUTPUT_SHIFT = 15,
     parameter int BN_BIAS_SHIFT     = 11,
@@ -521,6 +526,9 @@ module conv_bn_relu_parallel_block #(
     logic signed [15:0] relu_data;
     logic valid_d1;
     logic [31:0] addr_d1, addr_d2;
+    logic output_valid_d;
+    logic [31:0] output_addr_d;
+    logic signed [15:0] output_data_d;
 
     weight_rom #(
         .DATA_W(16*LANES), .DEPTH(PACKED_WEIGHT_DEPTH),
@@ -547,7 +555,8 @@ module conv_bn_relu_parallel_block #(
         .K_H(K_H), .K_W(K_W), .OUT_CH(OUT_CH),
         .OUT_H(OUT_H), .OUT_W(OUT_W), .LANES(LANES),
         .BIAS_SHIFT(CONV_BIAS_SHIFT),
-        .OUTPUT_SHIFT(CONV_OUTPUT_SHIFT)
+        .OUTPUT_SHIFT(CONV_OUTPUT_SHIFT),
+        .REGISTER_MAC_INPUTS(REGISTER_MAC_INPUTS)
     ) u_conv (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(conv_done_unused),
@@ -581,18 +590,34 @@ module conv_bn_relu_parallel_block #(
             valid_d1 <= 1'b0;
             addr_d1 <= '0;
             addr_d2 <= '0;
+            output_valid_d <= 1'b0;
+            output_addr_d <= '0;
+            output_data_d <= '0;
         end else begin
             valid_d1 <= conv_valid;
             if (conv_valid)
                 addr_d1 <= conv_addr;
             if (valid_d1)
                 addr_d2 <= addr_d1;
+
+            // Conv1 可選擇暫存 ReLU 輸出，切開 BN/ReLU 到 RAM 的長路徑。
+            output_valid_d <= relu_valid;
+            if (relu_valid) begin
+                output_addr_d <= addr_d2;
+                output_data_d <= relu_data;
+            end
         end
     end
 
     always_comb begin
-        output_valid = relu_valid;
-        output_addr  = addr_d2;
-        output_data  = relu_data;
+        if (REGISTER_OUTPUT) begin
+            output_valid = output_valid_d;
+            output_addr  = output_addr_d;
+            output_data  = output_data_d;
+        end else begin
+            output_valid = relu_valid;
+            output_addr  = addr_d2;
+            output_data  = relu_data;
+        end
     end
 endmodule

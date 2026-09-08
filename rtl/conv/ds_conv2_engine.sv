@@ -66,6 +66,10 @@ module ds_conv2_engine #(
     localparam integer PROD_WIDTH = DATA_WIDTH + WEIGHT_WIDTH;
     localparam integer PAIR_WIDTH = PROD_WIDTH + 1;
 
+    // 輸入資料排列為 h + IN_H * (w + IN_W * channel)。
+    // kernel width 前進一格加 IN_H；換 channel 時跳到下一個 channel 起點。
+    localparam integer CHANNEL_ADDR_STEP = IN_H * (IN_W - K_W + 1);
+
     localparam integer H_W      = (OUT_H > 1) ? $clog2(OUT_H) : 1;
     localparam integer W_W      = (OUT_W > 1) ? $clog2(OUT_W) : 1;
     localparam integer CH_W     = (IN_CH > 1) ? $clog2(IN_CH) : 1;
@@ -90,6 +94,10 @@ module ds_conv2_engine #(
     logic [GROUP_W-1:0] output_group;
     logic [LANE_W-1:0]  output_lane;
 
+    // 使用累加位址，避免每拍重新計算完整的 h/w/channel 乘加公式。
+    logic [INPUT_ADDR_WIDTH-1:0] spatial_base_addr;
+    logic [INPUT_ADDR_WIDTH-1:0] dw_input_addr_counter;
+
     // Fused Pointwise 排程器會直接參與 ROM 位址產生。
     logic pw_issue_active;
     logic [GROUP_W-1:0] pw_issue_group;
@@ -106,12 +114,8 @@ module ds_conv2_engine #(
     // RAM / ROM 位址
     // ------------------------------------------------------------------
     always_comb begin
-        input_addr_kh0 = out_h_count
-                       + IN_H * ((out_w_count + dw_issue_kw)
-                       + IN_W * dw_issue_channel);
-        input_addr_kh1 = (out_h_count + 1'b1)
-                       + IN_H * ((out_w_count + dw_issue_kw)
-                       + IN_W * dw_issue_channel);
+        input_addr_kh0 = dw_input_addr_counter;
+        input_addr_kh1 = dw_input_addr_counter + 1'b1;
 
         dw_weight_addr_full = dw_issue_kw + K_W * dw_issue_channel;
         dw_weight_addr = dw_weight_addr_full[$clog2(IN_CH*K_W)-1:0];
@@ -221,6 +225,13 @@ module ds_conv2_engine #(
     logic [CH_W-1:0] pw_prod_channel;
     logic signed [(LANES*BIAS_WIDTH)-1:0] pw_prod_bias;
     logic signed [PROD_WIDTH-1:0] pw_products [0:LANES-1];
+
+    // Pointwise 最後累加與量化分成兩級，縮短寫入結果的路徑。
+    logic pw_finalize_valid;
+    logic [GROUP_W-1:0] pw_finalize_group;
+    logic signed [(LANES*BIAS_WIDTH)-1:0] pw_finalize_bias;
+    logic signed [ACC_WIDTH-1:0] pw_finalize_sums [0:LANES-1];
+
     logic signed [ACC_WIDTH-1:0]
         pw_accumulators [0:OUT_GROUPS-1][0:LANES-1];
     logic signed [DATA_WIDTH-1:0]
@@ -252,6 +263,8 @@ module ds_conv2_engine #(
             dw_issue_kw      <= '0;
             output_group     <= '0;
             output_lane      <= '0;
+            spatial_base_addr     <= '0;
+            dw_input_addr_counter <= '0;
 
             dw_read_valid    <= 1'b0;
             dw_prod_valid    <= 1'b0;
@@ -284,6 +297,9 @@ module ds_conv2_engine #(
             pw_prod_group         <= '0;
             pw_prod_channel       <= '0;
             pw_prod_bias          <= '0;
+            pw_finalize_valid     <= 1'b0;
+            pw_finalize_group     <= '0;
+            pw_finalize_bias      <= '0;
         end else begin
             done         <= 1'b0;
             output_valid <= 1'b0;
@@ -300,49 +316,54 @@ module ds_conv2_engine #(
             dw_pair_channel <= dw_prod_channel;
             pw_prod_valid   <= pw_read_valid;
             pw_prod_group   <= pw_read_group;
+
             pw_prod_channel <= pw_read_channel;
 
             dw_read_valid <= 1'b0;
             pw_read_valid <= 1'b0;
+            pw_finalize_valid <= 1'b0;
 
+            // Pipeline stage 1 begin
+            // Depthwise multiplication
             if (dw_read_valid) begin
-                dw_product_kh0 <= $signed(input_data_kh0)
-                                * $signed(dw_w_kh0);
-                dw_product_kh1 <= $signed(input_data_kh1)
-                                * $signed(dw_w_kh1);
+                dw_product_kh0 <= $signed(input_data_kh0) * $signed(dw_w_kh0);
+                dw_product_kh1 <= $signed(input_data_kh1) * $signed(dw_w_kh1);
                 dw_prod_bias <= dw_bias_data;
             end
 
+            // Pipeline stage 2 begin
+            // Depthwise accumulation
             if (dw_prod_valid) begin
-                dw_pair_sum  <= $signed(dw_product_kh0)
-                              + $signed(dw_product_kh1);
+                dw_pair_sum  <= $signed(dw_product_kh0) + $signed(dw_product_kh1);
                 dw_pair_bias <= dw_prod_bias;
             end
 
+            // Pipeline stage 3 begin
+            // Depthwise sum
             if (dw_pair_valid) begin
+                // 第一筆資料，直接存入 accumulator
                 if (dw_pair_first)
                     dw_accumulator <= {{(ACC_WIDTH-PAIR_WIDTH){
                         dw_pair_sum[PAIR_WIDTH-1]}}, dw_pair_sum};
+                // 之後的資料，與 accumulator相加
                 else
-                    dw_accumulator <= dw_accumulator
-                                    + {{(ACC_WIDTH-PAIR_WIDTH){
-                                        dw_pair_sum[PAIR_WIDTH-1]}},
-                                       dw_pair_sum};
+                    dw_accumulator <= dw_accumulator + {{(ACC_WIDTH-PAIR_WIDTH){
+                        dw_pair_sum[PAIR_WIDTH-1]}}, dw_pair_sum};
 
                 if (dw_pair_last) begin
                     if (dw_pair_first)
                         dw_final_sum = {{(ACC_WIDTH-PAIR_WIDTH){
                             dw_pair_sum[PAIR_WIDTH-1]}}, dw_pair_sum};
                     else
-                        dw_final_sum = dw_accumulator
-                                     + {{(ACC_WIDTH-PAIR_WIDTH){
-                                         dw_pair_sum[PAIR_WIDTH-1]}},
-                                        dw_pair_sum};
+                        // 同步 dw_accumulator 加上最後一筆
+                        dw_final_sum = dw_accumulator + {{(ACC_WIDTH-PAIR_WIDTH){
+                            dw_pair_sum[PAIR_WIDTH-1]}}, dw_pair_sum};
 
-                    dw_quantized_value = quantize_dw(
-                        dw_final_sum, dw_pair_bias);
+                    // 進行 Quantization
+                    dw_quantized_value = quantize_dw(dw_final_sum, dw_pair_bias);
 
                     // K_W=5，兩個完成值間有五拍，足以排入四個 PW group。
+                    // 目前 channel
                     pw_pending_channel    <= dw_pair_channel;
                     pw_pending_activation <= dw_quantized_value;
                     pw_issue_group        <= '0;
@@ -357,47 +378,57 @@ module ds_conv2_engine #(
                 pw_read_channel    <= pw_pending_channel;
                 pw_read_activation <= pw_pending_activation;
 
+                // 四個 Group 完成
                 if (pw_issue_group == OUT_GROUPS-1) begin
                     pw_issue_group  <= '0;
+                    // 關閉 Group 入口
                     pw_issue_active <= 1'b0;
                 end else begin
                     pw_issue_group <= pw_issue_group + 1'b1;
                 end
             end
 
+            // PW Pipeline stage 1 begin
+            // Pointwise multiplication
             if (pw_read_valid) begin
                 for (lane = 0; lane < LANES; lane = lane + 1)
-                    pw_products[lane] <= $signed(pw_read_activation)
-                                       * $signed(pw_weight_data[
-                                           lane*WEIGHT_WIDTH
-                                           +: WEIGHT_WIDTH]);
+                    pw_products[lane] <= $signed(pw_read_activation) * $signed(pw_weight_data[lane*WEIGHT_WIDTH +: WEIGHT_WIDTH]);
                 pw_prod_bias <= pw_bias_data;
             end
 
+            // PW Pipeline stage 2 begin
+            // Pointwise accumulation
             if (pw_prod_valid) begin
                 for (lane = 0; lane < LANES; lane = lane + 1) begin
+                    // 第 0 個 channel，直接存入 accumulator
                     if (pw_prod_channel == 0)
-                        pw_final_sum = {{(ACC_WIDTH-PROD_WIDTH){
-                            pw_products[lane][PROD_WIDTH-1]}},
-                            pw_products[lane]};
+                        pw_final_sum = {{(ACC_WIDTH-PROD_WIDTH){pw_products[lane][PROD_WIDTH-1]}}, pw_products[lane]};
                     else
-                        pw_final_sum =
-                            pw_accumulators[pw_prod_group][lane]
-                            + {{(ACC_WIDTH-PROD_WIDTH){
-                                pw_products[lane][PROD_WIDTH-1]}},
-                               pw_products[lane]};
+                        // 之後的資料，與 accumulator 相加
+                        pw_final_sum = pw_accumulators[pw_prod_group][lane] + 
+                            {{(ACC_WIDTH-PROD_WIDTH){pw_products[lane][PROD_WIDTH-1]}}, pw_products[lane]};
 
                     pw_accumulators[pw_prod_group][lane] <= pw_final_sum;
 
+                    // 最後一筆資料，才輸出 pw_finalize_sums
                     if (pw_prod_channel == IN_CH-1)
-                        pw_results[pw_prod_group][lane] <= quantize_pw(
-                            pw_final_sum,
-                            pw_prod_bias[lane*BIAS_WIDTH +: BIAS_WIDTH]);
+                        pw_finalize_sums[lane] <= pw_final_sum;
                 end
 
-                // 最後一組 Pointwise 結果完成後，才開始依序輸出 20 channels。
-                if ((pw_prod_channel == IN_CH-1)
-                 && (pw_prod_group == OUT_GROUPS-1)) begin
+                if (pw_prod_channel == IN_CH-1) begin
+                    pw_finalize_valid <= 1'b1;
+                    pw_finalize_group <= pw_prod_group;
+                    pw_finalize_bias  <= pw_prod_bias;
+                end
+            end
+
+            // 第二級完成 bias、定點量化與結果寫入。
+            if (pw_finalize_valid) begin
+                for (lane = 0; lane < LANES; lane = lane + 1)
+                    pw_results[pw_finalize_group][lane] <= quantize_pw(pw_finalize_sums[lane], pw_finalize_bias[lane*BIAS_WIDTH +: BIAS_WIDTH]);
+
+                // 最後一組量化完成後，才開始依序輸出 20 channels。
+                if (pw_finalize_group == OUT_GROUPS-1) begin
                     output_group <= '0;
                     output_lane  <= '0;
                     state        <= S_OUTPUT;
@@ -411,6 +442,8 @@ module ds_conv2_engine #(
                         out_w_count      <= '0;
                         dw_issue_channel <= '0;
                         dw_issue_kw      <= '0;
+                        spatial_base_addr     <= '0;
+                        dw_input_addr_counter <= '0;
                         pw_issue_active  <= 1'b0;
                         state            <= S_DW_PREP;
                     end
@@ -420,25 +453,31 @@ module ds_conv2_engine #(
                 S_DW_PREP: begin
                     dw_issue_channel <= '0;
                     dw_issue_kw      <= '0;
+                    dw_input_addr_counter <= spatial_base_addr;
                     state            <= S_DW_STREAM;
                 end
 
                 // 所有 channel 與 kw 完全連續，不再逐 channel 進入 drain。
+                // 總共做 (2) * 5 * 20 = 200 次 MAC
                 S_DW_STREAM: begin
                     dw_read_valid   <= 1'b1;
                     dw_read_first   <= (dw_issue_kw == 0);
                     dw_read_last    <= (dw_issue_kw == K_W-1);
                     dw_read_channel <= dw_issue_channel;
 
+                    // 當最後一個 window(kh=4) 處理完
                     if (dw_issue_kw == K_W-1) begin
                         dw_issue_kw <= '0;
+                        // 當最後一個 channel(21) 處理完
                         if (dw_issue_channel == IN_CH-1) begin
                             state <= S_DRAIN;
                         end else begin
                             dw_issue_channel <= dw_issue_channel + 1'b1;
+                            dw_input_addr_counter <= dw_input_addr_counter + CHANNEL_ADDR_STEP;
                         end
                     end else begin
                         dw_issue_kw <= dw_issue_kw + 1'b1;
+                        dw_input_addr_counter <= dw_input_addr_counter + IN_H;
                     end
                 end
 
@@ -476,8 +515,12 @@ module ds_conv2_engine #(
                             if (out_h_count == OUT_H-1) begin
                                 out_h_count <= '0;
                                 out_w_count <= out_w_count + 1'b1;
+                                spatial_base_addr <= spatial_base_addr + K_H;
+                                dw_input_addr_counter <= spatial_base_addr + K_H;
                             end else begin
                                 out_h_count <= out_h_count + 1'b1;
+                                spatial_base_addr <= spatial_base_addr + 1'b1;
+                                dw_input_addr_counter <= spatial_base_addr + 1'b1;
                             end
                             state <= S_DW_PREP;
                         end
