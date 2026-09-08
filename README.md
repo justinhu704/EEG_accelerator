@@ -20,10 +20,11 @@ MATLAB/Python host
        v
 DE1-SoC FPGA
        |
-       +-- CNN1 -> BN -> ReLU
-       +-- CNN2 -> BN -> ReLU -> MaxPool
-       +-- CNN3 -> BN -> ReLU -> MaxPool
-       +-- GRU -> FC -> ReLU -> BN -> FC -> Argmax
+       +-- Conv1 (3 lanes) -> BN -> ReLU -> 8-bit even/odd feature RAM
+       +-- DS-Conv2 (5 pointwise lanes) -> BN -> ReLU -> streaming MaxPool1
+       +-- Conv3 (3 lanes) -> BN -> ReLU -> streaming MaxPool2
+       +-- pipelined GRU -> pipelined FC1 -> ReLU -> BN
+       +-- streaming output FC -> Argmax
        |
        v
 UART response: predicted class + winning logit + CRC
@@ -40,6 +41,7 @@ mapped back to its subject ID and shown on the seven-segment displays.
 | FPGA board | Terasic DE1-SoC |
 | FPGA device | Cyclone V `5CSEMA5F31C6` |
 | Board clock | 50 MHz `CLOCK_50` input |
+| Current timing target | 100 MHz (10 ns constraint) |
 | Quartus project | Quartus Prime Lite 25.1 |
 | RTL language | SystemVerilog |
 | Simulation | Questa Altera FPGA / ModelSim |
@@ -127,22 +129,36 @@ Device Manager:
 python host\send_eeg_uart.py --port COM10 --baud 921600
 ```
 
-The current hardware reuses two activation RAMs during inference, so the host
-sends one sample and waits for its response before sending the next sample. The
-complete request and response packet fields are documented in
-`docs/uart_protocol.md`.
+The current hardware uses one shared 16-bit activation RAM and an 8-bit banked
+feature RAM. The banked RAM separates even and odd height rows so Conv2 can read
+two adjacent rows at the same time. It is reused for the Pool2 output after the
+Conv1 feature map is no longer needed. The host sends one sample and waits for
+its response before sending the next sample. The complete request and response
+packet fields are documented in `docs/uart_protocol.md`.
 
 ## Current Project Status
 
-The repository currently contains the complete RTL hierarchy, module-level
-testbenches, full-pipeline testbenches, UART host tools, and a cycle-counting
-testbench. Parallel convolution versions are also included to reduce the number
-of inference cycles.
+The current inference path uses a depthwise separable Conv2, streaming pooling,
+even/odd feature-memory banks, and pipelined GRU and fully connected stages.
+Conv1 and Conv3 use three MAC lanes, while the pointwise stage of DS-Conv2 uses
+five lanes. The DS-Conv2 stage reduced its measured RTL cycle count from 823,086
+to 392,774 cycles.
 
-The next results to document are the final Quartus resource usage, timing
-results, FPGA-only inference latency, and accuracy comparison with the software
-model. These values are intentionally not listed here until they have been
-measured on the final build.
+The full RTL inference takes 1,018,709 cycles. This corresponds to about
+20.374 ms with the board's 50 MHz input clock, or 10.187 ms at 100 MHz. The
+current Quartus build meets the 100 MHz timing constraint with a reported Fmax
+of 108.92 MHz in the slow 1100 mV, 85 C corner. The design still requires a PLL
+or another 100 MHz clock source to run at 100 MHz on the board; changing the SDC
+constraint alone does not change the physical input clock.
+
+Current resource usage is 4,450 ALMs, 6,179 registers, 127 M10K blocks, and 34
+DSP blocks. The latest full UART dataset run classified 115,211 of 119,075
+samples correctly, giving 96.75% accuracy.
+
+PowerPlay currently estimates 622.79 mW total thermal power and 176.16 mW core
+dynamic power for the 100 MHz build. The report has low estimation confidence
+because the available VCD does not cover enough internal switching activity, so
+these power values should only be treated as preliminary estimates.
 
 ## License
 
