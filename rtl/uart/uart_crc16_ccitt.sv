@@ -19,6 +19,7 @@ module uart_crc16_ccitt (
             value = current_crc;
             for (bit_index = 0; bit_index < 8; bit_index = bit_index + 1) begin
                 if (value[15] ^ next_byte[7-bit_index])
+                    // 特徵多項式
                     value = {value[14:0], 1'b0} ^ 16'h1021;
                 else
                     value = {value[14:0], 1'b0};

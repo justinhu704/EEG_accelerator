@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import binascii
 import csv
 import struct
 import sys
@@ -20,15 +21,7 @@ RESPONSE_SIZE_AFTER_MAGIC = 10
 
 def crc16_ccitt(data: bytes, initial: int = 0xFFFF) -> int:
     """CRC-16/CCITT-FALSE: polynomial 0x1021, init 0xFFFF."""
-    crc = initial
-    for byte in data:
-        crc ^= byte << 8
-        for _ in range(8):
-            if crc & 0x8000:
-                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
-            else:
-                crc = (crc << 1) & 0xFFFF
-    return crc
+    return binascii.crc_hqx(data, initial)
 
 
 def build_request(sample_id: int, payload: bytes) -> bytes:

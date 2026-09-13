@@ -59,6 +59,7 @@ module uart_rx #(
                 end
 
                 RX_START: begin
+                    // 取樣點在 bit 中間
                     if (clock_count == (CLKS_PER_BIT-1)/2) begin
                         clock_count <= '0;
                         if (!rx_sync)
@@ -71,8 +72,10 @@ module uart_rx #(
                 end
 
                 RX_DATA: begin
+                    // 已在中間取樣
                     if (clock_count == CLKS_PER_BIT-1) begin
                         clock_count         <= '0;
+                        // 儲存 bit0 ~ bit7
                         shift_reg[bit_index] <= rx_sync;
                         if (bit_index == 3'd7) begin
                             bit_index <= '0;

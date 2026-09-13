@@ -132,6 +132,7 @@ module uart_sample_loader #(
                     READ_LEN1: begin
                         received_length[15:8] <= rx_data;
                         word_index <= 16'd0;
+                        // 長度保護，使用rx_data 因為async需等待下一拍
                         if ({rx_data, received_length[7:0]} == SAMPLE_WORDS)
                             state <= READ_DATA_LOW;
                         else begin
@@ -148,6 +149,7 @@ module uart_sample_loader #(
                     READ_DATA_HIGH: begin
                         input_write_en   <= 1'b1;
                         input_write_addr <= word_index[ADDR_W-1:0];
+                        // 組合成 16 bit
                         input_write_data <= $signed({rx_data, low_byte});
                         if (word_index == SAMPLE_WORDS-1) begin
                             state <= READ_CRC_LOW;

@@ -149,9 +149,7 @@ module fpga_uart_top #(
         .winning_logit(core_winning_logit),
         .logit_valid(logit_valid_unused),
         .logit_index(logit_index_unused),
-        .logit_data(logit_data_unused),
-        .logit_read_addr(7'd0),
-        .logit_read_data(logit_read_data_unused)
+        .logit_data(logit_data_unused)
     );
 
     assign response_start  = core_done || packet_error;

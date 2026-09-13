@@ -49,6 +49,7 @@ module uart_tx #(
                 end
 
                 TX_START: begin
+                    // send bit 0
                     if (clock_count == CLKS_PER_BIT-1) begin
                         clock_count <= '0;
                         serial_tx   <= shift_reg[0];
@@ -59,6 +60,7 @@ module uart_tx #(
                 end
 
                 TX_DATA: begin
+                    // send bit 1 ~ bit 7
                     if (clock_count == CLKS_PER_BIT-1) begin
                         clock_count <= '0;
                         if (bit_index == 3'd7) begin
