@@ -11,7 +11,7 @@ module streaming_maxpool #(
     parameter int INPUT_F  = 13,
     parameter int OUTPUT_F = 13,
     parameter int OUT_H    = IN_H,
-    parameter int OUT_W    = ((IN_W - POOL_W) / STRIDE_W) + 1
+    parameter int OUT_W    = ((IN_W - POOL_W) / STRIDE_W) + 1 // output width = 19
 ) (
     input  logic               clk,
     input  logic               rst_n,
@@ -34,7 +34,7 @@ module streaming_maxpool #(
     localparam int W_COUNT_W  = (IN_W <= 1) ? 1 : $clog2(IN_W);
     localparam int H_COUNT_W  = (IN_H <= 1) ? 1 : $clog2(IN_H);
     localparam int LANE_W     = (LANES <= 1) ? 1 : $clog2(LANES);
-    localparam int WINDOW_W   = (OUT_W + 1 <= 1) ? 1 : $clog2(OUT_W + 1);
+    localparam int WINDOW_W   = (OUT_W + 1 <= 1) ? 1 : $clog2(OUT_W + 1); // 5
     localparam int STRIDE_W_W = (STRIDE_W <= 1) ? 1 : $clog2(STRIDE_W);
     localparam int CHANNEL_W  = (IN_CH <= 1) ? 1 : $clog2(IN_CH);
 
@@ -85,6 +85,7 @@ module streaming_maxpool #(
     logic signed [47:0] completed_scaled;
     logic signed [15:0] completed_saturated;
 
+    // 比較器
     function automatic logic signed [15:0] max16(
         input logic signed [15:0] a,
         input logic signed [15:0] b

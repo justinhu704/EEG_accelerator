@@ -88,18 +88,22 @@ module dsconv_streaming_pool #(
         max_read_addr = max_read_addr_full[MAX_ADDR_W-1:0];
 
         current_window_valid = (current_window < OUT_W);
-        previous_window_active = (current_window > 0)
-                               && (stride_phase < OVERLAP);
-        previous_window_ends = previous_window_active
-                             && (stride_phase == OVERLAP-1);
+
+        // 判斷當前輸入點是否落在前一個視窗重疊的 2 點範圍
+        previous_window_active = (current_window > 0) && (stride_phase < OVERLAP);
+
+        // 判斷前一個視窗重疊範圍是否結束，代表舊視窗收集完全部 10 個點宣告結束
+        previous_window_ends = previous_window_active && (stride_phase == OVERLAP-1);
+        
         current_window_is_odd = current_window[0];
         previous_window = current_window - 1'b1;
-        end_of_width = (input_h == IN_H-1)
-                     && (input_channel == IN_CH-1);
+        end_of_width = (input_h == IN_H-1) && (input_channel == IN_CH-1);
+        
         stage1_output_addr_full = input_h + OUT_H
                                 * (previous_window + OUT_W * input_channel);
     end
 
+    // 檢查
     initial begin
         if (POOL_W <= STRIDE_W)
             $error("dsconv_streaming_pool requires overlapping windows");
@@ -107,6 +111,7 @@ module dsconv_streaming_pool #(
             $error("dsconv_streaming_pool supports at most two active windows");
     end
 
+    // 偶數 RAM : 負責 Window 0, 2, 4, ...
     activation_ram #(
         .DATA_W(16), .DEPTH(MAX_DEPTH), .ADDR_W(MAX_ADDR_W),
         .MEM_FILE(""), .USE_READ_ENABLE(1'b1)
@@ -120,6 +125,7 @@ module dsconv_streaming_pool #(
         .read_data(max_even_read_data)
     );
 
+    // 奇數 RAM : 負責 Window 1, 3, 5, ...
     activation_ram #(
         .DATA_W(16), .DEPTH(MAX_DEPTH), .ADDR_W(MAX_ADDR_W),
         .MEM_FILE(""), .USE_READ_ENABLE(1'b1)
