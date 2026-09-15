@@ -3,7 +3,7 @@
 // and returns the class. No third activation/input RAM is instantiated.
 module fpga_uart_top #(
     // 921600 baud rate
-    parameter integer UART_CLKS_PER_BIT = 54,
+    parameter integer UART_CLKS_PER_BIT = 109,
     parameter CONV1_W_FILE  = "mem/dsconv2/weights/conv1_W.mem",
     parameter CONV1_B_FILE  = "mem/dsconv2/weights/conv1_b.mem",
     parameter CONV1_PACKED_W_FILE = "mem/dsconv2/weights/conv1_W_x3.mem",
@@ -84,23 +84,45 @@ module fpga_uart_top #(
     logic [6:0] subject_id;
     logic [3:0] bcd_hundreds, bcd_tens, bcd_ones;
 
+    logic core_clk_100;
+    logic pll_locked;
+    logic core_async_rst_n;
+
+    pll_50_to_100 u_pll (
+        .refclk   (CLOCK_50),
+        .rst      (~KEY[0]),
+        .outclk_0 (core_clk_100),
+        .locked   (pll_locked)
+    );
+
     // KEY0 provides asynchronous assertion and synchronous release.
-    always_ff @(posedge CLOCK_50 or negedge KEY[0]) begin
+    /*always_ff @(posedge CLOCK_50 or negedge KEY[0]) begin
         if (!KEY[0])
             reset_sync <= 2'b00;
         else
             reset_sync <= {reset_sync[0], 1'b1};
     end
+    assign rst_n = reset_sync[1];*/
+
+    assign core_async_rst_n = KEY[0] & pll_locked;
+
+    always_ff @(posedge core_clk_100 or negedge core_async_rst_n) begin
+        if (!core_async_rst_n)
+            reset_sync <= 2'b00;
+        else
+            reset_sync <= {reset_sync[0], 1'b1};
+    end
+
     assign rst_n = reset_sync[1];
 
     uart_rx #(.CLKS_PER_BIT(UART_CLKS_PER_BIT)) u_uart_rx (
-        .clk(CLOCK_50), .rst_n(rst_n), .serial_rx(UART_RXD),
+        .clk(core_clk_100), .rst_n(rst_n), .serial_rx(UART_RXD),
         .data(rx_data), .valid(rx_valid),
         .framing_error(rx_framing_error), .busy(rx_busy)
     );
 
     uart_sample_loader #(.SAMPLE_WORDS(3360), .ADDR_W(12)) u_loader (
-        .clk(CLOCK_50), .rst_n(rst_n),
+        .clk(core_clk_100), .rst_n(rst_n),
         .rx_data(rx_data), .rx_valid(rx_valid),
         .rx_framing_error(rx_framing_error),
         .input_ready(input_ready),
@@ -139,7 +161,7 @@ module fpga_uart_top #(
         .FC_BN_A_FILE(FC_BN_A_FILE), .FC_BN_B_FILE(FC_BN_B_FILE),
         .FC_OUT_W_FILE(FC_OUT_W_FILE), .FC_OUT_B_FILE(FC_OUT_B_FILE)
     ) u_eeg_top (
-        .clk(CLOCK_50), .rst_n(rst_n), .start(inference_start),
+        .clk(core_clk_100), .rst_n(rst_n), .start(inference_start),
         .busy(core_busy), .done(core_done),
         .input_write_en(input_write_en),
         .input_write_addr(input_write_addr),
@@ -156,7 +178,7 @@ module fpga_uart_top #(
     assign response_status = packet_error ? 8'd1 : 8'd0;
 
     uart_result_sender u_result_sender (
-        .clk(CLOCK_50), .rst_n(rst_n), .start(response_start),
+        .clk(core_clk_100), .rst_n(rst_n), .start(response_start),
         .sample_id(sample_id), .status(response_status),
         .class_index(packet_error ? 7'd0 : core_class_index),
         .winning_logit(packet_error ? 16'sd0 : core_winning_logit),
@@ -166,12 +188,12 @@ module fpga_uart_top #(
     );
 
     uart_tx #(.CLKS_PER_BIT(UART_CLKS_PER_BIT)) u_uart_tx (
-        .clk(CLOCK_50), .rst_n(rst_n),
+        .clk(core_clk_100), .rst_n(rst_n),
         .start(tx_start), .data(tx_data),
         .serial_tx(UART_TXD), .busy(tx_busy), .done(tx_done)
     );
 
-    always_ff @(posedge CLOCK_50 or negedge rst_n) begin
+    always_ff @(posedge core_clk_100 or negedge rst_n) begin
         if (!rst_n) begin
             result_valid         <= 1'b0;
             packet_error_latched <= 1'b0;
