@@ -9,7 +9,7 @@ module dsconv_streaming_pool #(
     parameter int INPUT_F  = 11,
     parameter int OUTPUT_F = 11,
     parameter int OUT_H    = IN_H,
-    parameter int OUT_W    = ((IN_W - POOL_W) / STRIDE_W) + 1
+    parameter int OUT_W    = ((IN_W - POOL_W) / STRIDE_W) + 1 // (152 - 10) / 8 + 1 = 18
 ) (
     input  logic               clk,
     input  logic               rst_n,
@@ -98,7 +98,7 @@ module dsconv_streaming_pool #(
         current_window_is_odd = current_window[0];
         previous_window = current_window - 1'b1;
         end_of_width = (input_h == IN_H-1) && (input_channel == IN_CH-1);
-        
+
         stage1_output_addr_full = input_h + OUT_H
                                 * (previous_window + OUT_W * input_channel);
     end
@@ -139,6 +139,7 @@ module dsconv_streaming_pool #(
         .read_data(max_odd_read_data)
     );
 
+    // 最後一筆資料與 RAM 讀出值比較
     always_comb begin
         if (!stage1_current_window_is_odd)
             completed_max = max16(stage1_data, max_odd_read_data);
@@ -171,25 +172,21 @@ module dsconv_streaming_pool #(
                 if (!stage1_current_window_is_odd) begin
                     max_even_write_en = 1'b1;
                     if (!stage1_first_value)
-                        max_even_write_data = max16(stage1_data,
-                                                    max_even_read_data);
+                        max_even_write_data = max16(stage1_data, max_even_read_data);
                 end else begin
                     max_odd_write_en = 1'b1;
                     if (!stage1_first_value)
-                        max_odd_write_data = max16(stage1_data,
-                                                   max_odd_read_data);
+                        max_odd_write_data = max16(stage1_data, max_odd_read_data);
                 end
             end
 
             if (stage1_previous_window_active) begin
                 if (!stage1_current_window_is_odd) begin
                     max_odd_write_en = 1'b1;
-                    max_odd_write_data = max16(stage1_data,
-                                               max_odd_read_data);
+                    max_odd_write_data = max16(stage1_data, max_odd_read_data);
                 end else begin
                     max_even_write_en = 1'b1;
-                    max_even_write_data = max16(stage1_data,
-                                                max_even_read_data);
+                    max_even_write_data = max16(stage1_data, max_even_read_data);
                 end
             end
         end
@@ -228,10 +225,14 @@ module dsconv_streaming_pool #(
                     stride_phase <= '0;
                 end
             end else begin
+
+                // Pipeline Stage 1 
                 if (!draining && input_valid) begin
                     stage1_valid <= 1'b1;
                     stage1_last <= input_last;
                     stage1_data <= input_data;
+
+                    // 延後一拍 對其 RAM
                     stage1_max_addr <= max_read_addr;
                     stage1_current_window_valid <= current_window_valid;
                     stage1_previous_window_active <= previous_window_active;
