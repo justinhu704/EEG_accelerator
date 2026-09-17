@@ -25,6 +25,7 @@ module ds_conv2_engine #(
     input  logic clk,
     input  logic rst_n,
     input  logic start,
+    input  logic [INPUT_ADDR_WIDTH-1:0] input_base_addr,
 
     output logic busy,
     output logic done,
@@ -32,6 +33,10 @@ module ds_conv2_engine #(
     // Conv1 banked RAM 接收邏輯位址，奇偶 bank 轉換由 RAM 內部完成。
     output logic [INPUT_ADDR_WIDTH-1:0] input_addr_kh0,
     output logic [INPUT_ADDR_WIDTH-1:0] input_addr_kh1,
+    // 直接提供目前 DW 讀取座標，避免外部 RAM 反解線性位址。
+    output logic [((IN_H-K_H+1) > 1 ? $clog2(IN_H-K_H+1) : 1)-1:0] input_issue_h,
+    output logic [((K_W > 1) ? $clog2(K_W) : 1)-1:0] input_issue_kw,
+    output logic [((IN_CH > 1) ? $clog2(IN_CH) : 1)-1:0] input_issue_channel,
     input  logic signed [DATA_WIDTH-1:0] input_data_kh0,
     input  logic signed [DATA_WIDTH-1:0] input_data_kh1,
 
@@ -52,8 +57,8 @@ module ds_conv2_engine #(
     output logic output_last,
     output logic signed [DATA_WIDTH-1:0] output_data,
     output logic [OUTPUT_ADDR_WIDTH-1:0] output_addr,
-    output logic [$clog2(IN_H-K_H+1)-1:0] output_h,
-    output logic [$clog2(IN_W-K_W+1)-1:0] output_w,
+    output logic [((IN_H-K_H+1) > 1 ? $clog2(IN_H-K_H+1) : 1)-1:0] output_h,
+    output logic [((IN_W-K_W+1) > 1 ? $clog2(IN_W-K_W+1) : 1)-1:0] output_w,
     output logic [$clog2(OUT_CH)-1:0] output_channel
 );
 
@@ -116,6 +121,9 @@ module ds_conv2_engine #(
     always_comb begin
         input_addr_kh0 = dw_input_addr_counter;
         input_addr_kh1 = dw_input_addr_counter + 1'b1;
+        input_issue_h = out_h_count;
+        input_issue_kw = dw_issue_kw;
+        input_issue_channel = dw_issue_channel;
 
         dw_weight_addr_full = dw_issue_kw + K_W * dw_issue_channel;
         dw_weight_addr = dw_weight_addr_full[$clog2(IN_CH*K_W)-1:0];
@@ -442,8 +450,8 @@ module ds_conv2_engine #(
                         out_w_count      <= '0;
                         dw_issue_channel <= '0;
                         dw_issue_kw      <= '0;
-                        spatial_base_addr     <= '0;
-                        dw_input_addr_counter <= '0;
+                        spatial_base_addr     <= input_base_addr;
+                        dw_input_addr_counter <= input_base_addr;
                         pw_issue_active  <= 1'b0;
                         state            <= S_DW_PREP;
                     end

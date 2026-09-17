@@ -9,8 +9,7 @@ module tb_eeg_cycle_count;
     localparam int MAX_CYCLES = 20_100_000;
     localparam int EXPECTED_LOGITS = 105;
     localparam int EXPECTED_CLASS = 0;
-    // 優化前 DS-Conv2 + BN2/ReLU2/Pool1 的實測基準。
-    localparam int DS_CONV2_BASELINE_CYCLES = 823_086;
+    localparam int MAX_STAGE_DIFF = 2;
     localparam int CONV1_VALUES = 20 * 156 * 21;
     localparam int CONV2_VALUES = 19 * 152 * 20;
     localparam int POOL1_VALUES = 19 * 18 * 20;
@@ -49,42 +48,44 @@ module tb_eeg_cycle_count;
     integer stage_diff;
 
     eeg_top #(
-        .INPUT_FILE("../mem/dsconv2/board/ram_a_sample0_q12.mem"),
-        .CONV1_W_FILE("../mem/dsconv2/weights/conv1_W.mem"),
-        .CONV1_B_FILE("../mem/dsconv2/weights/conv1_b.mem"),
-        .CONV1_PACKED_W_FILE("../mem/dsconv2/weights/conv1_W_x3.mem"),
-        .CONV1_PACKED_B_FILE("../mem/dsconv2/weights/conv1_b_x3.mem"),
-        .BN1_A_FILE("../mem/dsconv2/weights/bn1_A.mem"),
-        .BN1_B_FILE("../mem/dsconv2/weights/bn1_B.mem"),
-        .CONV2_DW_W_FILE("../mem/dsconv2/weights/conv2_depthwise_W_kh2.mem"),
-        .CONV2_DW_B_FILE("../mem/dsconv2/weights/conv2_depthwise_b.mem"),
-        .CONV2_PW_W_FILE("../mem/dsconv2/weights/conv2_pointwise_W_x5.mem"),
-        .CONV2_PW_B_FILE("../mem/dsconv2/weights/conv2_pointwise_b_x5.mem"),
-        .BN2_A_FILE("../mem/dsconv2/weights/bn2_A.mem"),
-        .BN2_B_FILE("../mem/dsconv2/weights/bn2_B.mem"),
-        .CONV3_W_FILE("../mem/dsconv2/weights/conv3_W.mem"),
-        .CONV3_B_FILE("../mem/dsconv2/weights/conv3_b.mem"),
-        .CONV3_PACKED_W_FILE("../mem/dsconv2/weights/conv3_W_x3.mem"),
-        .CONV3_PACKED_B_FILE("../mem/dsconv2/weights/conv3_b_x3.mem"),
-        .BN3_A_FILE("../mem/dsconv2/weights/bn3_A.mem"),
-        .BN3_B_FILE("../mem/dsconv2/weights/bn3_B.mem"),
-        .GRU_WR_FILE("../mem/dsconv2/weights/gru_Wr.mem"),
-        .GRU_WZ_FILE("../mem/dsconv2/weights/gru_Wz.mem"),
-        .GRU_WH_FILE("../mem/dsconv2/weights/gru_Wh.mem"),
-        .GRU_UR_FILE("../mem/dsconv2/weights/gru_Ur.mem"),
-        .GRU_UZ_FILE("../mem/dsconv2/weights/gru_Uz.mem"),
-        .GRU_UH_FILE("../mem/dsconv2/weights/gru_Uh.mem"),
-        .GRU_BR_FILE("../mem/dsconv2/weights/gru_br.mem"),
-        .GRU_BZ_FILE("../mem/dsconv2/weights/gru_bz.mem"),
-        .GRU_BH_FILE("../mem/dsconv2/weights/gru_bh.mem"),
+        .INPUT_FILE("../mem/dsconv1_dsconv2/board/ram_a_sample0_q12.mem"),
+        .INPUT_EVEN_FILE("../mem/dsconv1_dsconv2/board/sample0_q12_even.mem"),
+        .INPUT_ODD_FILE("../mem/dsconv1_dsconv2/board/sample0_q12_odd.mem"),
+        .CONV1_DW_W_FILE("../mem/dsconv1_dsconv2/weights/conv1_depthwise_W_kh2.mem"),
+        .CONV1_DW_B_FILE("../mem/dsconv1_dsconv2/weights/conv1_depthwise_b.mem"),
+        .CONV1_PW_W_FILE("../mem/dsconv1_dsconv2/weights/conv1_pointwise_W_x7.mem"),
+        .CONV1_PW_B_FILE("../mem/dsconv1_dsconv2/weights/conv1_pointwise_b_x7.mem"),
+        .BN1_A_FILE("../mem/dsconv1_dsconv2/weights/bn1_A.mem"),
+        .BN1_B_FILE("../mem/dsconv1_dsconv2/weights/bn1_B.mem"),
+        .CONV2_DW_W_FILE("../mem/dsconv1_dsconv2/weights/conv2_depthwise_W_kh2.mem"),
+        .CONV2_DW_B_FILE("../mem/dsconv1_dsconv2/weights/conv2_depthwise_b.mem"),
+        .CONV2_PW_W_FILE("../mem/dsconv1_dsconv2/weights/conv2_pointwise_W_x5.mem"),
+        .CONV2_PW_B_FILE("../mem/dsconv1_dsconv2/weights/conv2_pointwise_b_x5.mem"),
+        .BN2_A_FILE("../mem/dsconv1_dsconv2/weights/bn2_A.mem"),
+        .BN2_B_FILE("../mem/dsconv1_dsconv2/weights/bn2_B.mem"),
+        .CONV3_W_FILE("../mem/dsconv1_dsconv2/weights/conv3_W.mem"),
+        .CONV3_B_FILE("../mem/dsconv1_dsconv2/weights/conv3_b.mem"),
+        .CONV3_PACKED_W_FILE("../mem/dsconv1_dsconv2/weights/conv3_W_x3.mem"),
+        .CONV3_PACKED_B_FILE("../mem/dsconv1_dsconv2/weights/conv3_b_x3.mem"),
+        .BN3_A_FILE("../mem/dsconv1_dsconv2/weights/bn3_A.mem"),
+        .BN3_B_FILE("../mem/dsconv1_dsconv2/weights/bn3_B.mem"),
+        .GRU_WR_FILE("../mem/dsconv1_dsconv2/weights/gru_Wr.mem"),
+        .GRU_WZ_FILE("../mem/dsconv1_dsconv2/weights/gru_Wz.mem"),
+        .GRU_WH_FILE("../mem/dsconv1_dsconv2/weights/gru_Wh.mem"),
+        .GRU_UR_FILE("../mem/dsconv1_dsconv2/weights/gru_Ur.mem"),
+        .GRU_UZ_FILE("../mem/dsconv1_dsconv2/weights/gru_Uz.mem"),
+        .GRU_UH_FILE("../mem/dsconv1_dsconv2/weights/gru_Uh.mem"),
+        .GRU_BR_FILE("../mem/dsconv1_dsconv2/weights/gru_br.mem"),
+        .GRU_BZ_FILE("../mem/dsconv1_dsconv2/weights/gru_bz.mem"),
+        .GRU_BH_FILE("../mem/dsconv1_dsconv2/weights/gru_bh.mem"),
         .SIGMOID_FILE("../mem/lut/sigmoid_half_lut_q15.mem"),
         .TANH_FILE("../mem/lut/tanh_half_lut_q15.mem"),
-        .FC1_W_FILE("../mem/dsconv2/weights/fc_1_W.mem"),
-        .FC1_B_FILE("../mem/dsconv2/weights/fc_1_b.mem"),
-        .FC_BN_A_FILE("../mem/dsconv2/weights/bn_2_A.mem"),
-        .FC_BN_B_FILE("../mem/dsconv2/weights/bn_2_B.mem"),
-        .FC_OUT_W_FILE("../mem/dsconv2/weights/fc_out_W.mem"),
-        .FC_OUT_B_FILE("../mem/dsconv2/weights/fc_out_b.mem")
+        .FC1_W_FILE("../mem/dsconv1_dsconv2/weights/fc_1_W.mem"),
+        .FC1_B_FILE("../mem/dsconv1_dsconv2/weights/fc_1_b.mem"),
+        .FC_BN_A_FILE("../mem/dsconv1_dsconv2/weights/bn_2_A.mem"),
+        .FC_BN_B_FILE("../mem/dsconv1_dsconv2/weights/bn_2_B.mem"),
+        .FC_OUT_W_FILE("../mem/dsconv1_dsconv2/weights/fc_out_W.mem"),
+        .FC_OUT_B_FILE("../mem/dsconv1_dsconv2/weights/fc_out_b.mem")
     ) dut (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(done),
@@ -102,11 +103,11 @@ module tb_eeg_cycle_count;
     always #(CLOCK_PERIOD_NS/2.0) clk = ~clk;
 
     initial begin
-        $readmemh("../mem/dsconv2/golden/q_relu1_act_sample0.mem",
+        $readmemh("../mem/dsconv1_dsconv2/golden/q_relu1_act_sample0.mem",
                   conv1_golden);
-        $readmemh("../mem/dsconv2/golden/q_relu2_act_sample0.mem",
+        $readmemh("../mem/dsconv1_dsconv2/golden/q_relu2_act_sample0.mem",
                   conv2_golden);
-        $readmemh("../mem/dsconv2/golden/q_pool1_act_sample0.mem",
+        $readmemh("../mem/dsconv1_dsconv2/golden/q_pool1_act_sample0.mem",
                   pool1_golden);
         clk = 1'b0;
         rst_n = 1'b0;
@@ -156,9 +157,9 @@ module tb_eeg_cycle_count;
 
             // Hierarchical references are intentionally used only by this
             // profiler. They do not add hardware to the synthesized design.
-            if (dut.u_cnn_gru.conv1_start)
+            if (dut.u_cnn_gru.conv1_start && (conv1_cycle == 0))
                 conv1_cycle <= cycle_number;
-            if (dut.u_cnn_gru.conv2_start)
+            if (dut.u_cnn_gru.conv2_start && (conv2_cycle == 0))
                 conv2_cycle <= cycle_number;
             if (dut.u_cnn_gru.conv3_start)
                 conv3_cycle <= cycle_number;
@@ -209,13 +210,10 @@ module tb_eeg_cycle_count;
                 $display("==================================================");
                 $display("Controller/start overhead : %0d cycles",
                          conv1_cycle - start_cycle);
-                $display("Conv1 + BN1 + ReLU1       : %0d cycles",
+                $display("DS-Conv1/2 + BN/ReLU/Pool1: %0d cycles",
+                         conv3_cycle - conv1_cycle);
+                $display("First five Conv1 columns   : %0d cycles",
                          conv2_cycle - conv1_cycle);
-                $display("DS-Conv2 + BN2/ReLU2/Pool1: %0d cycles",
-                         conv3_cycle - conv2_cycle);
-                $display("DS-Conv2 cycles saved       : %0d cycles",
-                         DS_CONV2_BASELINE_CYCLES
-                         - (conv3_cycle - conv2_cycle));
                 // Pool2 and Conv3 start together and operate as one streaming
                 // interval, so separate start timestamps cannot divide them.
                 $display("Conv3 + BN3 + ReLU3/Pool2 : %0d cycles",
@@ -245,16 +243,18 @@ module tb_eeg_cycle_count;
                     $display("FAIL: expected %0d logits, received %0d.",
                              EXPECTED_LOGITS, final_logit_count);
                     $fatal(1);
-                end else if ((conv3_cycle - conv2_cycle)
-                          >= DS_CONV2_BASELINE_CYCLES) begin
-                    $display("FAIL: DS-Conv2 cycle count did not improve.");
+                end else if ((conv1_max_diff > MAX_STAGE_DIFF) ||
+                             (conv2_max_diff > MAX_STAGE_DIFF) ||
+                             (pool1_max_diff > MAX_STAGE_DIFF)) begin
+                    $display("FAIL: stage golden difference exceeds %0d.",
+                             MAX_STAGE_DIFF);
                     $fatal(1);
                 end else if (class_index != EXPECTED_CLASS) begin
                     $display("FAIL: expected class %0d, received %0d.",
                              EXPECTED_CLASS, class_index);
                     $fatal(1);
                 end else begin
-                    $display("PASS: DS inference, class, and cycle count are valid.");
+                    $display("PASS: DS-Conv1/2 inference, class, and cycle count are valid.");
                 end
             end
 

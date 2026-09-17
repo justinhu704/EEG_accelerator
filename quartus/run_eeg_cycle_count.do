@@ -1,14 +1,16 @@
 transcript on
-exec python ../host/pack_parallel_conv_weights.py --weights ../mem/dsconv2/weights/conv1_W.mem --bias ../mem/dsconv2/weights/conv1_b.mem --output-weights ../mem/dsconv2/weights/conv1_W_x3.mem --output-bias ../mem/dsconv2/weights/conv1_b_x3.mem --kh 2 --kw 5 --in-ch 1 --out-ch 21 --lanes 3
-exec python ../host/pack_parallel_conv_weights.py --weights ../mem/dsconv2/weights/conv3_W.mem --bias ../mem/dsconv2/weights/conv3_b.mem --output-weights ../mem/dsconv2/weights/conv3_W_x3.mem --output-bias ../mem/dsconv2/weights/conv3_b_x3.mem --kh 2 --kw 5 --in-ch 20 --out-ch 15 --lanes 3
-exec python ../host/pack_dsconv2_weights.py
+exec python ../host/pack_dsconv1_dsconv2_weights.py
+exec python ../host/pack_parallel_conv_weights.py --weights ../mem/dsconv1_dsconv2/weights/conv3_W.mem --bias ../mem/dsconv1_dsconv2/weights/conv3_b.mem --output-weights ../mem/dsconv1_dsconv2/weights/conv3_W_x3.mem --output-bias ../mem/dsconv1_dsconv2/weights/conv3_b_x3.mem --kh 2 --kw 5 --in-ch 20 --out-ch 15 --lanes 3
 if {![file exists work]} {vlib work}
 
 vlog -sv ../rtl/common/sat16.sv
 vlog -sv ../rtl/common/pe_mac.sv
 vlog -sv ../rtl/memory/weight_rom.sv
 vlog -sv ../rtl/memory/activation_ram.sv
+vlog -sv ../rtl/memory/input_banked_ram.sv
 vlog -sv ../rtl/memory/conv1_banked_ram.sv
+vlog -sv ../rtl/memory/dsconv12_window_buffer.sv
+vlog -sv ../rtl/memory/pool2_gru_ram.sv
 vlog -sv ../rtl/bn_relu/relu.sv
 vlog -sv ../rtl/bn_relu/bn_affine.sv
 vlog -sv ../rtl/conv/conv_controller.sv

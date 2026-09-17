@@ -27,6 +27,9 @@ module tb_ds_conv2_engine;
 
     logic [15:0] input_addr_kh0;
     logic [15:0] input_addr_kh1;
+    logic input_issue_h;
+    logic [$clog2(K_W)-1:0] input_issue_kw;
+    logic [$clog2(IN_CH)-1:0] input_issue_channel;
     logic signed [DATA_WIDTH-1:0] input_data_kh0;
     logic signed [DATA_WIDTH-1:0] input_data_kh1;
 
@@ -89,10 +92,14 @@ module tb_ds_conv2_engine;
         .clk(clk),
         .rst_n(rst_n),
         .start(start),
+        .input_base_addr('0),
         .busy(busy),
         .done(done),
         .input_addr_kh0(input_addr_kh0),
         .input_addr_kh1(input_addr_kh1),
+        .input_issue_h(input_issue_h),
+        .input_issue_kw(input_issue_kw),
+        .input_issue_channel(input_issue_channel),
         .input_data_kh0(input_data_kh0),
         .input_data_kh1(input_data_kh1),
         .dw_weight_addr(dw_weight_addr),

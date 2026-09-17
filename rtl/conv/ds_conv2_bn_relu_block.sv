@@ -24,16 +24,20 @@ module ds_conv2_bn_relu_block #(
     input  logic clk,
     input  logic rst_n,
     input  logic start,
+    input  logic [31:0] input_base_addr,
     output logic busy,
     output logic [31:0] input_addr_kh0,
     output logic [31:0] input_addr_kh1,
+    output logic [((IN_H-K_H+1) > 1 ? $clog2(IN_H-K_H+1) : 1)-1:0] input_issue_h,
+    output logic [((K_W > 1) ? $clog2(K_W) : 1)-1:0] input_issue_kw,
+    output logic [((IN_CH > 1) ? $clog2(IN_CH) : 1)-1:0] input_issue_channel,
     input  logic signed [15:0] input_data_kh0,
     input  logic signed [15:0] input_data_kh1,
     output logic output_valid,
     output logic output_last,
     output logic [31:0] output_addr,
-    output logic [$clog2(IN_H-K_H+1)-1:0] output_h,
-    output logic [$clog2(IN_W-K_W+1)-1:0] output_w,
+    output logic [((IN_H-K_H+1) > 1 ? $clog2(IN_H-K_H+1) : 1)-1:0] output_h,
+    output logic [((IN_W-K_W+1) > 1 ? $clog2(IN_W-K_W+1) : 1)-1:0] output_w,
     output logic [$clog2(OUT_CH)-1:0] output_channel,
     output logic signed [15:0] output_data
 );
@@ -55,8 +59,8 @@ module ds_conv2_bn_relu_block #(
     logic conv_done_unused;
     logic conv_valid, conv_last;
     logic [31:0] conv_addr;
-    logic [$clog2(OUT_H)-1:0] conv_h;
-    logic [$clog2(OUT_W)-1:0] conv_w;
+    logic [((OUT_H > 1) ? $clog2(OUT_H) : 1)-1:0] conv_h;
+    logic [((OUT_W > 1) ? $clog2(OUT_W) : 1)-1:0] conv_w;
     logic [$clog2(OUT_CH)-1:0] conv_channel;
     logic signed [15:0] conv_data;
 
@@ -64,8 +68,8 @@ module ds_conv2_bn_relu_block #(
     logic signed [15:0] bn_data, relu_data;
     logic metadata_valid_d1;
     logic [31:0] addr_d1, addr_d2;
-    logic [$clog2(OUT_H)-1:0] h_d1, h_d2;
-    logic [$clog2(OUT_W)-1:0] w_d1, w_d2;
+    logic [((OUT_H > 1) ? $clog2(OUT_H) : 1)-1:0] h_d1, h_d2;
+    logic [((OUT_W > 1) ? $clog2(OUT_W) : 1)-1:0] w_d1, w_d2;
     logic [$clog2(OUT_CH)-1:0] channel_d1, channel_d2;
     logic last_d1, last_d2;
 
@@ -114,9 +118,13 @@ module ds_conv2_bn_relu_block #(
         .PW_OUT_SHIFT(PW_OUTPUT_SHIFT)
     ) u_ds_conv2 (
         .clk(clk), .rst_n(rst_n), .start(start),
+        .input_base_addr(input_base_addr),
         .busy(busy), .done(conv_done_unused),
         .input_addr_kh0(input_addr_kh0),
         .input_addr_kh1(input_addr_kh1),
+        .input_issue_h(input_issue_h),
+        .input_issue_kw(input_issue_kw),
+        .input_issue_channel(input_issue_channel),
         .input_data_kh0(input_data_kh0),
         .input_data_kh1(input_data_kh1),
         .dw_weight_addr(dw_weight_addr), .dw_weight_data(dw_weight_data),
@@ -180,7 +188,7 @@ module ds_conv2_bn_relu_block #(
 
     always_comb begin
         output_valid = relu_valid;
-        output_last = last_d2;
+        output_last = relu_valid && last_d2;
         output_addr = addr_d2;
         output_h = h_d2;
         output_w = w_d2;

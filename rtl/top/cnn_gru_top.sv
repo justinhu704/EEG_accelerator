@@ -1,157 +1,134 @@
 // Standalone complete CNN + GRU accelerator top.
-// This module does not instantiate cnn_stage1/2/3_top.
-//
-// RAM A -> Conv1/BN1/ReLU1                   -> Conv1 even/odd banks
-// Conv1 banks -> Conv2/BN2/ReLU2/Pool1        -> RAM A
-// RAM A -> Conv3/BN3/ReLU3/streaming Pool2   -> reused Conv1 banks
-// Reused Conv1 banks -> GRU                  -> RAM A
+// DS-Conv1 and DS-Conv2 exchange data through a five-column rolling buffer.
 module cnn_gru_top #(
-    parameter INPUT_FILE   = "mem/dsconv2/board/ram_a_sample0_q12.mem",
-    parameter CONV1_W_FILE = "mem/dsconv2/weights/conv1_W.mem",
-    parameter CONV1_B_FILE = "mem/dsconv2/weights/conv1_b.mem",
-    parameter CONV1_PACKED_W_FILE = "mem/dsconv2/weights/conv1_W_x3.mem",
-    parameter CONV1_PACKED_B_FILE = "mem/dsconv2/weights/conv1_b_x3.mem",
-    parameter BN1_A_FILE   = "mem/dsconv2/weights/bn1_A.mem",
-    parameter BN1_B_FILE   = "mem/dsconv2/weights/bn1_B.mem",
-    parameter CONV2_DW_W_FILE = "mem/dsconv2/weights/conv2_depthwise_W_kh2.mem",
-    parameter CONV2_DW_B_FILE = "mem/dsconv2/weights/conv2_depthwise_b.mem",
-    parameter CONV2_PW_W_FILE = "mem/dsconv2/weights/conv2_pointwise_W_x5.mem",
-    parameter CONV2_PW_B_FILE = "mem/dsconv2/weights/conv2_pointwise_b_x5.mem",
-    parameter BN2_A_FILE   = "mem/dsconv2/weights/bn2_A.mem",
-    parameter BN2_B_FILE   = "mem/dsconv2/weights/bn2_B.mem",
-    parameter CONV3_W_FILE = "mem/dsconv2/weights/conv3_W.mem",
-    parameter CONV3_B_FILE = "mem/dsconv2/weights/conv3_b.mem",
-    parameter CONV3_PACKED_W_FILE = "mem/dsconv2/weights/conv3_W_x3.mem",
-    parameter CONV3_PACKED_B_FILE = "mem/dsconv2/weights/conv3_b_x3.mem",
-    parameter BN3_A_FILE   = "mem/dsconv2/weights/bn3_A.mem",
-    parameter BN3_B_FILE   = "mem/dsconv2/weights/bn3_B.mem",
-    parameter GRU_WR_FILE  = "mem/dsconv2/weights/gru_Wr.mem",
-    parameter GRU_WZ_FILE  = "mem/dsconv2/weights/gru_Wz.mem",
-    parameter GRU_WH_FILE  = "mem/dsconv2/weights/gru_Wh.mem",
-    parameter GRU_UR_FILE  = "mem/dsconv2/weights/gru_Ur.mem",
-    parameter GRU_UZ_FILE  = "mem/dsconv2/weights/gru_Uz.mem",
-    parameter GRU_UH_FILE  = "mem/dsconv2/weights/gru_Uh.mem",
-    parameter GRU_BR_FILE  = "mem/dsconv2/weights/gru_br.mem",
-    parameter GRU_BZ_FILE  = "mem/dsconv2/weights/gru_bz.mem",
-    parameter GRU_BH_FILE  = "mem/dsconv2/weights/gru_bh.mem",
+    parameter INPUT_FILE = "mem/dsconv1_dsconv2/board/ram_a_sample0_q12.mem",
+    parameter INPUT_EVEN_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_even.mem",
+    parameter INPUT_ODD_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_odd.mem",
+    parameter CONV1_DW_W_FILE = "mem/dsconv1_dsconv2/weights/conv1_depthwise_W_kh2.mem",
+    parameter CONV1_DW_B_FILE = "mem/dsconv1_dsconv2/weights/conv1_depthwise_b.mem",
+    parameter CONV1_PW_W_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_W_x7.mem",
+    parameter CONV1_PW_B_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_b_x7.mem",
+    parameter BN1_A_FILE = "mem/dsconv1_dsconv2/weights/bn1_A.mem",
+    parameter BN1_B_FILE = "mem/dsconv1_dsconv2/weights/bn1_B.mem",
+    parameter CONV2_DW_W_FILE = "mem/dsconv1_dsconv2/weights/conv2_depthwise_W_kh2.mem",
+    parameter CONV2_DW_B_FILE = "mem/dsconv1_dsconv2/weights/conv2_depthwise_b.mem",
+    parameter CONV2_PW_W_FILE = "mem/dsconv1_dsconv2/weights/conv2_pointwise_W_x5.mem",
+    parameter CONV2_PW_B_FILE = "mem/dsconv1_dsconv2/weights/conv2_pointwise_b_x5.mem",
+    parameter BN2_A_FILE = "mem/dsconv1_dsconv2/weights/bn2_A.mem",
+    parameter BN2_B_FILE = "mem/dsconv1_dsconv2/weights/bn2_B.mem",
+    parameter CONV3_W_FILE = "mem/dsconv1_dsconv2/weights/conv3_W.mem",
+    parameter CONV3_B_FILE = "mem/dsconv1_dsconv2/weights/conv3_b.mem",
+    parameter CONV3_PACKED_W_FILE = "mem/dsconv1_dsconv2/weights/conv3_W_x3.mem",
+    parameter CONV3_PACKED_B_FILE = "mem/dsconv1_dsconv2/weights/conv3_b_x3.mem",
+    parameter BN3_A_FILE = "mem/dsconv1_dsconv2/weights/bn3_A.mem",
+    parameter BN3_B_FILE = "mem/dsconv1_dsconv2/weights/bn3_B.mem",
+    parameter GRU_WR_FILE = "mem/dsconv1_dsconv2/weights/gru_Wr.mem",
+    parameter GRU_WZ_FILE = "mem/dsconv1_dsconv2/weights/gru_Wz.mem",
+    parameter GRU_WH_FILE = "mem/dsconv1_dsconv2/weights/gru_Wh.mem",
+    parameter GRU_UR_FILE = "mem/dsconv1_dsconv2/weights/gru_Ur.mem",
+    parameter GRU_UZ_FILE = "mem/dsconv1_dsconv2/weights/gru_Uz.mem",
+    parameter GRU_UH_FILE = "mem/dsconv1_dsconv2/weights/gru_Uh.mem",
+    parameter GRU_BR_FILE = "mem/dsconv1_dsconv2/weights/gru_br.mem",
+    parameter GRU_BZ_FILE = "mem/dsconv1_dsconv2/weights/gru_bz.mem",
+    parameter GRU_BH_FILE = "mem/dsconv1_dsconv2/weights/gru_bh.mem",
     parameter SIGMOID_FILE = "mem/lut/sigmoid_half_lut_q15.mem",
-    parameter TANH_FILE    = "mem/lut/tanh_half_lut_q15.mem"
+    parameter TANH_FILE = "mem/lut/tanh_half_lut_q15.mem"
 ) (
-    input  logic               clk,
-    input  logic               rst_n,
-    input  logic               start,
-    output logic               busy,
-    output logic               done,
-
-    // External loader for one 21x160 EEG sample. Writes are accepted only
-    // while this CNN/GRU block is idle. Addresses 0..3359 hold one sample.
-    input  logic               input_write_en,
-    input  logic [11:0]        input_write_addr,
-    input  logic signed [15:0] input_write_data,
-    output logic               input_ready,
-
-    // Live final GRU stream: 9 hidden units x 18 time steps.
-    output logic               output_valid,
-    output logic [31:0]        output_addr,
+    input logic clk, input logic rst_n, input logic start,
+    output logic busy, output logic done,
+    input logic input_write_en,
+    input logic [11:0] input_write_addr,
+    input logic signed [15:0] input_write_data,
+    output logic input_ready,
+    output logic output_valid,
+    output logic [31:0] output_addr,
     output logic signed [15:0] output_data,
-
-    // Final GRU results occupy result RAM (RAM A) addresses 0..161.
-    input  logic               result_read_en,
-    input  logic [15:0]        result_read_addr,
+    input logic result_read_en,
+    input logic [15:0] result_read_addr,
     output logic signed [15:0] result_read_data
 );
-    localparam int RAM_A_DEPTH = 19 * 18 * 20;  // Pool1 is RAM A's largest tensor.
+    localparam int RAM_A_DEPTH = 19 * 18 * 20;
     localparam int RAM_ADDR_W = 16;
     localparam int POOL1_ADDR_W = 13;
-    localparam int CONV1_SIZE = 20 * 156 * 21;
 
     typedef enum logic [3:0] {
-        S_IDLE,
-        S_RUN_CONV1,
-        S_START_CONV2,
-        S_RUN_CONV2,
-        S_START_CONV3,
-        S_RUN_CONV3,
-        S_START_GRU,
-        S_RUN_GRU,
-        S_DONE
+        S_IDLE, S_START_CONV1, S_RUN_CONV1,
+        S_START_CONV2, S_RUN_CONV2, S_WAIT_POOL1,
+        S_START_CONV3, S_RUN_CONV3,
+        S_START_GRU, S_RUN_GRU, S_DONE
     } state_t;
     state_t state;
 
-    logic conv1_start, conv1_busy, conv1_valid;
-    logic [31:0] conv1_input_addr, conv1_addr;
+    logic conv1_start, conv1_busy, conv1_valid, conv1_last;
+    logic [31:0] conv1_input_addr_kh0, conv1_input_addr_kh1;
+    logic [4:0] conv1_input_h_unused;
+    logic [2:0] conv1_input_kw_unused;
+    logic conv1_input_channel_unused;
+    logic [31:0] conv1_local_addr, conv1_addr;
+    logic [4:0] conv1_h, conv1_channel;
+    logic conv1_w_unused;
     logic signed [15:0] conv1_data;
-    logic conv2_start, conv2_busy, conv2_valid;
-    logic [31:0] conv2_input_addr, conv2_input_addr_kh1, conv2_addr;
+    logic [7:0] conv1_column;
+    logic [2:0] conv1_write_slot;
+
+    logic conv2_start, conv2_busy, conv2_valid, conv2_last;
+    logic conv2_global_last;
+    logic [31:0] conv2_input_addr, conv2_input_addr_kh1;
+    logic [4:0] conv2_input_h, conv2_input_channel;
+    logic [2:0] conv2_input_kw;
+    logic [31:0] conv2_local_addr, conv2_addr;
+    logic [4:0] conv2_h, conv2_channel;
+    logic conv2_w_unused;
     logic signed [15:0] conv2_data;
-    logic conv2_last;
-    logic [4:0] conv2_h;
-    logic [7:0] conv2_w;
-    logic [4:0] conv2_channel;
+    logic [7:0] conv2_column;
+    logic [2:0] conv2_window_slot;
+
     logic conv3_start, conv3_busy, conv3_valid;
     logic [31:0] conv3_input_addr, conv3_addr;
     logic signed [15:0] conv3_data;
-
     logic pool1_start, pool1_busy, pool1_done, pool1_valid;
     logic [12:0] pool1_addr;
     logic signed [15:0] pool1_data;
     logic pool2_start, pool2_busy, pool2_done, pool2_valid;
     logic [12:0] pool2_addr;
     logic signed [15:0] pool2_data;
-
     logic gru_start, gru_busy, gru_done, gru_valid;
     logic [31:0] gru_input_addr, gru_addr;
     logic signed [15:0] gru_data;
 
     logic [RAM_ADDR_W-1:0] ram_a_internal_read_addr;
-    logic ram_a_read_en;
-    logic signed [15:0] ram_a_read_data;
-    logic signed [15:0] conv1_bank_data_kh0, conv1_bank_data_kh1;
-    logic signed [15:0] shared_pool2_gru_data;
-    logic ram_a_write_en;
+    logic ram_a_read_en, ram_a_write_en;
     logic [RAM_ADDR_W-1:0] ram_a_write_addr;
-    logic signed [15:0] ram_a_write_data;
-    logic conv1_bank_read_en;
+    logic signed [15:0] ram_a_read_data, ram_a_write_data;
+    logic signed [15:0] input_shadow_data_kh0, input_shadow_data_kh1;
+    logic signed [15:0] conv1_buffer_kh0, conv1_buffer_kh1;
+    logic signed [15:0] shared_pool2_gru_data;
 
     always_comb begin
-        conv1_start = (state == S_IDLE) && start;
+        conv1_start = (state == S_START_CONV1);
         conv2_start = (state == S_START_CONV2);
-        // Conv2 與 maxpool1 同步
-        pool1_start = conv2_start;
+        pool1_start = conv2_start && (conv2_column == 0);
         conv3_start = (state == S_START_CONV3);
-        // Conv3 and Pool2 start together so Pool2 can consume the live
-        // ReLU3 stream. Starting Pool2 after Conv3 would lose that stream.
         pool2_start = conv3_start;
         gru_start = (state == S_START_GRU);
+        conv2_global_last = conv2_last && (conv2_column == 151);
+
+        conv1_addr = conv1_h + 20 * (conv1_column + 156 * conv1_channel);
+        conv2_addr = conv2_h + 19 * (conv2_column + 152 * conv2_channel);
     end
 
-    // Select which engine owns each synchronous RAM read port.
+    // RAM A keeps the input, Pool1 output and final GRU result.
     always_comb begin
         ram_a_read_en = result_read_en;
         if ((state == S_START_CONV3) || (state == S_RUN_CONV3)) begin
             ram_a_internal_read_addr = conv3_input_addr[15:0];
             ram_a_read_en = 1'b1;
-        end else if ((state == S_RUN_CONV1) || conv1_start) begin
-            ram_a_internal_read_addr = conv1_input_addr[15:0];
-            ram_a_read_en = 1'b1;
-        end else begin
+        end
+        else begin
             ram_a_internal_read_addr = result_read_addr;
         end
-    end
 
-    // Bank RAM is read only by Conv2 and GRU. Pool2 uses its write ports.
-    always_comb begin
-        conv1_bank_read_en =
-            (state == S_START_CONV2) || (state == S_RUN_CONV2) ||
-            (state == S_START_GRU)   || (state == S_RUN_GRU);
-    end
-
-    // =======================================
-    // RAM A destinations: external EEG loader, streaming Pool1, and final GRU results
-    // =======================================
-    always_comb begin
-        ram_a_write_en = (input_ready && input_write_en) ||
-                         pool1_valid || gru_valid;
+        ram_a_write_en = (input_ready && input_write_en) || pool1_valid || gru_valid;
         if (gru_valid) begin
             ram_a_write_addr = gru_addr[15:0];
             ram_a_write_data = gru_data;
@@ -159,9 +136,7 @@ module cnn_gru_top #(
             ram_a_write_addr = {{(RAM_ADDR_W-12){1'b0}}, input_write_addr};
             ram_a_write_data = input_write_data;
         end else begin
-            ram_a_write_addr = {
-                {(RAM_ADDR_W - POOL1_ADDR_W){1'b0}}, pool1_addr
-            };
+            ram_a_write_addr = {{(RAM_ADDR_W-POOL1_ADDR_W){1'b0}}, pool1_addr};
             ram_a_write_data = pool1_data;
         end
     end
@@ -170,94 +145,100 @@ module cnn_gru_top #(
         .DATA_W(16), .DEPTH(RAM_A_DEPTH), .ADDR_W(RAM_ADDR_W),
         .MEM_FILE(INPUT_FILE), .USE_READ_ENABLE(1'b1)
     ) u_ram_a (
-        .clk(clk),
-        .write_en(ram_a_write_en),
+        .clk(clk), .write_en(ram_a_write_en),
         .write_addr(ram_a_write_addr), .write_data(ram_a_write_data),
-        .read_en(ram_a_read_en),
-        .read_addr(ram_a_internal_read_addr), .read_data(ram_a_read_data)
+        .read_en(ram_a_read_en), .read_addr(ram_a_internal_read_addr),
+        .read_data(ram_a_read_data)
     );
 
-    // =======================================
-    // Conv1 banked RAM: ReLU1 is quantized to UQ5 and separated by height
-    // parity. Conv2 reads one even and one odd activation every clock.
-    // =======================================
-    conv1_banked_ram #(
-        .INPUT_F(11), .STORED_F(5), .LOG_ADDR_W(RAM_ADDR_W),
-        .BANK_DEPTH(CONV1_SIZE / 2)
-    ) u_conv1_ram (
+    // 原始 EEG 依線性位址奇偶分 bank，Conv1 每拍讀取 kh0/kh1。
+    input_banked_ram #(
+        .DATA_W(16), .DEPTH(21*160), .ADDR_W(12),
+        .EVEN_MEM_FILE(INPUT_EVEN_FILE), .ODD_MEM_FILE(INPUT_ODD_FILE)
+    ) u_input_banks (
         .clk(clk), .rst_n(rst_n),
-        .read_en(conv1_bank_read_en),
-        .write_en(conv1_valid),
-        .write_logical_addr(conv1_addr[RAM_ADDR_W-1:0]),
-        .write_q11_data(conv1_data),
-        .pool2_write_en(pool2_valid),
-        .pool2_write_addr(pool2_addr[8:0]),
-        .pool2_write_data(pool2_data),
-        .gru_read_mode((state == S_START_GRU) || (state == S_RUN_GRU)),
-        .gru_read_addr(gru_input_addr[8:0]),
-        .gru_read_data(shared_pool2_gru_data),
-        .read_logical_addr_kh0(conv2_input_addr[RAM_ADDR_W-1:0]),
-        .read_logical_addr_kh1(conv2_input_addr_kh1[RAM_ADDR_W-1:0]),
-        .read_q11_data_kh0(conv1_bank_data_kh0),
-        .read_q11_data_kh1(conv1_bank_data_kh1)
-    );
-
-    assign result_read_data = ram_a_read_data;
-
-    conv_bn_relu_parallel_block #(
-        .IN_H(21), .IN_W(160), .IN_CH(1),
-        .K_H(2), .K_W(5), .OUT_CH(21), .LANES(3),
-        .REGISTER_MAC_INPUTS(1'b1),
-        .REGISTER_OUTPUT(1'b1),
-        .CONV_BIAS_SHIFT(12), .CONV_OUTPUT_SHIFT(14),
-        .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(13),
-        .RELU_LEFT_SHIFT(0),
-        .PACKED_WEIGHT_FILE(CONV1_PACKED_W_FILE),
-        .PACKED_BIAS_FILE(CONV1_PACKED_B_FILE),
-        .BN_A_FILE(BN1_A_FILE), .BN_B_FILE(BN1_B_FILE)
-    ) u_conv1_bn_relu (
-        .clk(clk), .rst_n(rst_n), .start(conv1_start),
-        .busy(conv1_busy),
-        .input_addr(conv1_input_addr), .input_data(ram_a_read_data),
-        .output_valid(conv1_valid), .output_addr(conv1_addr),
-        .output_data(conv1_data)
+        .write_en(input_ready && input_write_en),
+        .write_addr(input_write_addr), .write_data(input_write_data),
+        .read_en(conv1_start || conv1_busy),
+        .read_addr_kh0(conv1_input_addr_kh0[11:0]),
+        .read_addr_kh1(conv1_input_addr_kh1[11:0]),
+        .read_data_kh0(input_shadow_data_kh0),
+        .read_data_kh1(input_shadow_data_kh1)
     );
 
     ds_conv2_bn_relu_block #(
-        .IN_H(20), .IN_W(156), .IN_CH(21),
+        .IN_H(21), .IN_W(5), .IN_CH(1),
+        .K_H(2), .K_W(5), .OUT_CH(21), .LANES(7),
+        .DW_BIAS_SHIFT(12), .DW_OUTPUT_SHIFT(14),
+        .PW_BIAS_SHIFT(13), .PW_OUTPUT_SHIFT(13),
+        .BN_BIAS_SHIFT(13), .BN_OUTPUT_SHIFT(13),
+        .DW_WEIGHT_FILE(CONV1_DW_W_FILE), .DW_BIAS_FILE(CONV1_DW_B_FILE),
+        .PW_WEIGHT_FILE(CONV1_PW_W_FILE), .PW_BIAS_FILE(CONV1_PW_B_FILE),
+        .BN_A_FILE(BN1_A_FILE), .BN_B_FILE(BN1_B_FILE)
+    ) u_conv1_bn_relu (
+        .clk(clk), .rst_n(rst_n), .start(conv1_start),
+        .input_base_addr(conv1_column * 21), .busy(conv1_busy),
+        .input_addr_kh0(conv1_input_addr_kh0),
+        .input_addr_kh1(conv1_input_addr_kh1),
+        .input_issue_h(conv1_input_h_unused),
+        .input_issue_kw(conv1_input_kw_unused),
+        .input_issue_channel(conv1_input_channel_unused),
+        .input_data_kh0(input_shadow_data_kh0),
+        .input_data_kh1(input_shadow_data_kh1),
+        .output_valid(conv1_valid), .output_last(conv1_last),
+        .output_addr(conv1_local_addr), .output_h(conv1_h),
+        .output_w(conv1_w_unused), .output_channel(conv1_channel),
+        .output_data(conv1_data)
+    );
+
+    dsconv12_window_buffer u_conv12_buffer (
+        .clk(clk), .rst_n(rst_n),
+        .write_en(conv1_valid), .write_slot(conv1_write_slot),
+        .write_h(conv1_h), .write_channel(conv1_channel),
+        .write_data(conv1_data),
+        .read_en((state == S_START_CONV2) || (state == S_RUN_CONV2)),
+        .window_base_slot(conv2_window_slot),
+        .read_h(conv2_input_h),
+        .read_kw(conv2_input_kw),
+        .read_channel(conv2_input_channel),
+        .read_data_kh0(conv1_buffer_kh0),
+        .read_data_kh1(conv1_buffer_kh1)
+    );
+
+    ds_conv2_bn_relu_block #(
+        .IN_H(20), .IN_W(5), .IN_CH(21),
         .K_H(2), .K_W(5), .OUT_CH(20), .LANES(5),
-        .DW_BIAS_SHIFT(10), .DW_OUTPUT_SHIFT(15),
-        .PW_BIAS_SHIFT(10), .PW_OUTPUT_SHIFT(15),
-        .BN_BIAS_SHIFT(10), .BN_OUTPUT_SHIFT(13),
-        .RELU_LEFT_SHIFT(0),
-        .DW_WEIGHT_FILE(CONV2_DW_W_FILE),
-        .DW_BIAS_FILE(CONV2_DW_B_FILE),
-        .PW_WEIGHT_FILE(CONV2_PW_W_FILE),
-        .PW_BIAS_FILE(CONV2_PW_B_FILE),
+        .DW_BIAS_SHIFT(11), .DW_OUTPUT_SHIFT(15),
+        .PW_BIAS_SHIFT(11), .PW_OUTPUT_SHIFT(15),
+        .BN_BIAS_SHIFT(11), .BN_OUTPUT_SHIFT(14),
+        .DW_WEIGHT_FILE(CONV2_DW_W_FILE), .DW_BIAS_FILE(CONV2_DW_B_FILE),
+        .PW_WEIGHT_FILE(CONV2_PW_W_FILE), .PW_BIAS_FILE(CONV2_PW_B_FILE),
         .BN_A_FILE(BN2_A_FILE), .BN_B_FILE(BN2_B_FILE)
     ) u_conv2_bn_relu (
         .clk(clk), .rst_n(rst_n), .start(conv2_start),
-        .busy(conv2_busy),
+        .input_base_addr(32'd0), .busy(conv2_busy),
         .input_addr_kh0(conv2_input_addr),
         .input_addr_kh1(conv2_input_addr_kh1),
-        .input_data_kh0(conv1_bank_data_kh0),
-        .input_data_kh1(conv1_bank_data_kh1),
+        .input_issue_h(conv2_input_h),
+        .input_issue_kw(conv2_input_kw),
+        .input_issue_channel(conv2_input_channel),
+        .input_data_kh0(conv1_buffer_kh0),
+        .input_data_kh1(conv1_buffer_kh1),
         .output_valid(conv2_valid), .output_last(conv2_last),
-        .output_addr(conv2_addr), .output_h(conv2_h),
-        .output_w(conv2_w), .output_channel(conv2_channel),
+        .output_addr(conv2_local_addr), .output_h(conv2_h),
+        .output_w(conv2_w_unused), .output_channel(conv2_channel),
         .output_data(conv2_data)
     );
 
     dsconv_streaming_pool #(
         .IN_H(19), .IN_W(152), .IN_CH(20),
-        .POOL_W(10), .STRIDE_W(8),
-        .INPUT_F(11), .OUTPUT_F(11)
+        .POOL_W(10), .STRIDE_W(8), .INPUT_F(11), .OUTPUT_F(11)
     ) u_pool1 (
         .clk(clk), .rst_n(rst_n), .start(pool1_start),
         .busy(pool1_busy), .done(pool1_done),
-        .input_valid(conv2_valid), .input_last(conv2_last),
+        .input_valid(conv2_valid), .input_last(conv2_global_last),
         .input_data(conv2_data), .input_h(conv2_h),
-        .input_w(conv2_w), .input_channel(conv2_channel),
+        .input_w(conv2_column), .input_channel(conv2_channel),
         .output_valid(pool1_valid), .output_addr(pool1_addr),
         .output_data(pool1_data)
     );
@@ -268,13 +249,11 @@ module cnn_gru_top #(
         .REGISTER_MAC_INPUTS(1'b1),
         .CONV_BIAS_SHIFT(11), .CONV_OUTPUT_SHIFT(17),
         .BN_BIAS_SHIFT(10), .BN_OUTPUT_SHIFT(12),
-        .RELU_LEFT_SHIFT(0),
         .PACKED_WEIGHT_FILE(CONV3_PACKED_W_FILE),
         .PACKED_BIAS_FILE(CONV3_PACKED_B_FILE),
         .BN_A_FILE(BN3_A_FILE), .BN_B_FILE(BN3_B_FILE)
     ) u_conv3_bn_relu (
-        .clk(clk), .rst_n(rst_n), .start(conv3_start),
-        .busy(conv3_busy),
+        .clk(clk), .rst_n(rst_n), .start(conv3_start), .busy(conv3_busy),
         .input_addr(conv3_input_addr), .input_data(ram_a_read_data),
         .output_valid(conv3_valid), .output_addr(conv3_addr),
         .output_data(conv3_data)
@@ -292,71 +271,84 @@ module cnn_gru_top #(
         .output_data(pool2_data)
     );
 
+    pool2_gru_ram u_pool2_gru_ram (
+        .clk(clk), .write_en(pool2_valid), .write_addr(pool2_addr[8:0]),
+        .write_data(pool2_data),
+        .read_en((state == S_START_GRU) || (state == S_RUN_GRU)),
+        .read_addr(gru_input_addr[8:0]), .read_data(shared_pool2_gru_data)
+    );
+
     gru_engine_pipeline #(
-        .WR_FILE(GRU_WR_FILE), .WZ_FILE(GRU_WZ_FILE),
-        .WH_FILE(GRU_WH_FILE), .UR_FILE(GRU_UR_FILE),
-        .UZ_FILE(GRU_UZ_FILE), .UH_FILE(GRU_UH_FILE),
-        .BR_FILE(GRU_BR_FILE), .BZ_FILE(GRU_BZ_FILE),
-        .BH_FILE(GRU_BH_FILE),
+        .WR_FILE(GRU_WR_FILE), .WZ_FILE(GRU_WZ_FILE), .WH_FILE(GRU_WH_FILE),
+        .UR_FILE(GRU_UR_FILE), .UZ_FILE(GRU_UZ_FILE), .UH_FILE(GRU_UH_FILE),
+        .BR_FILE(GRU_BR_FILE), .BZ_FILE(GRU_BZ_FILE), .BH_FILE(GRU_BH_FILE),
         .SIGMOID_FILE(SIGMOID_FILE), .TANH_FILE(TANH_FILE)
     ) u_gru (
         .clk(clk), .rst_n(rst_n), .start(gru_start),
         .busy(gru_busy), .done(gru_done),
         .input_addr(gru_input_addr), .input_data(shared_pool2_gru_data),
-        .output_valid(gru_valid), .output_addr(gru_addr),
-        .output_data(gru_data)
+        .output_valid(gru_valid), .output_addr(gru_addr), .output_data(gru_data)
     );
 
-    // Move to the next layer only after the final value has been written.
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= S_IDLE;
+            conv1_column <= '0;
+            conv2_column <= '0;
+            conv1_write_slot <= '0;
+            conv2_window_slot <= '0;
         end else begin
             case (state)
-                S_IDLE:
-                    if (start)
-                        state <= S_RUN_CONV1;
-                S_RUN_CONV1:
-                    if (conv1_valid && (conv1_addr == CONV1_SIZE-1))
+                S_IDLE: if (start) begin
+                    conv1_column <= 0; conv2_column <= 0;
+                    conv1_write_slot <= 0; conv2_window_slot <= 0;
+                    state <= S_START_CONV1;
+                end
+                S_START_CONV1: state <= S_RUN_CONV1;
+                S_RUN_CONV1: if (conv1_valid && conv1_last) begin
+                    if (conv1_column < 4) begin
+                        conv1_column <= conv1_column + 1'b1;
+                        conv1_write_slot <= conv1_write_slot + 1'b1;
+                        state <= S_START_CONV1;
+                    end else begin
                         state <= S_START_CONV2;
-                S_START_CONV2:
-                    state <= S_RUN_CONV2;
-                S_RUN_CONV2:
-                    // pool1_done is asserted only after all 57,760 ReLU2
-                    // stream values have passed through the pool reducer.
-                    if (pool1_done)
-                        state <= S_START_CONV3;
-                S_START_CONV3:
-                    state <= S_RUN_CONV3;
-                S_RUN_CONV3:
-                    // pool2_done is asserted only after the complete ReLU3
-                    // stream has passed through the synchronous max buffer.
-                    if (pool2_done)
-                        state <= S_START_GRU;
-                S_START_GRU:
-                    state <= S_RUN_GRU;
-                S_RUN_GRU:
-                    if (gru_done)
-                        state <= S_DONE;
-                S_DONE:
-                    state <= S_IDLE;
-                default:
-                    state <= S_IDLE;
+                    end
+                end
+                S_START_CONV2: state <= S_RUN_CONV2;
+                S_RUN_CONV2: if (conv2_valid && conv2_last) begin
+                    if (conv2_column == 151) begin
+                        state <= S_WAIT_POOL1;
+                    end else begin
+                        conv2_column <= conv2_column + 1'b1;
+                        conv2_window_slot <= (conv2_window_slot == 4)
+                                           ? 0 : conv2_window_slot + 1'b1;
+                        conv1_column <= conv1_column + 1'b1;
+                        conv1_write_slot <= (conv1_write_slot == 4)
+                                          ? 0 : conv1_write_slot + 1'b1;
+                        state <= S_START_CONV1;
+                    end
+                end
+                S_WAIT_POOL1: if (pool1_done) state <= S_START_CONV3;
+                S_START_CONV3: state <= S_RUN_CONV3;
+                S_RUN_CONV3: if (pool2_done) state <= S_START_GRU;
+                S_START_GRU: state <= S_RUN_GRU;
+                S_RUN_GRU: if (gru_done) state <= S_DONE;
+                S_DONE: state <= S_IDLE;
+                default: state <= S_IDLE;
             endcase
         end
     end
 
+    assign result_read_data = ram_a_read_data;
     always_comb begin
         busy = (state != S_IDLE) && (state != S_DONE);
         done = (state == S_DONE);
-        // Do not accept a write in the same cycle as start.
         input_ready = (state == S_IDLE) && !start;
         output_valid = gru_valid;
         output_addr = gru_addr;
         output_data = gru_data;
     end
 endmodule
-
 // Reusable Conv -> BN -> ReLU block with external activation RAM input.
 // It is a datapath block, not a Stage1/2/3 top-level module.
 module conv_bn_relu_block #(
