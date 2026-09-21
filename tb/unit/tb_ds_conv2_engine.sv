@@ -1,12 +1,12 @@
 `timescale 1ns/1ps
 
 // DS-Conv2 獨立測試：保留正式設計的 21 input channels、20 output
-// channels 與 5 lanes，只縮小成一個空間位置，方便觀察完整 pipeline。
+// channels 與 5 lanes，保留兩個空間位置以確認計算與輸出確實重疊。
 module tb_ds_conv2_engine;
     localparam integer DATA_WIDTH  = 16;
     localparam integer WEIGHT_WIDTH = 16;
     localparam integer BIAS_WIDTH  = 16;
-    localparam integer IN_H        = 2;
+    localparam integer IN_H        = 3;
     localparam integer IN_W        = 5;
     localparam integer IN_CH       = 21;
     localparam integer K_H         = 2;
@@ -14,10 +14,13 @@ module tb_ds_conv2_engine;
     localparam integer OUT_CH      = 20;
     localparam integer LANES       = 5;
     localparam integer OUT_GROUPS  = OUT_CH / LANES;
+    localparam integer OUT_H       = IN_H - K_H + 1;
+    localparam integer OUT_W       = IN_W - K_W + 1;
+    localparam integer EXPECTED_OUTPUTS = OUT_H * OUT_W * OUT_CH;
     localparam integer INPUT_SIZE  = IN_H * IN_W * IN_CH;
     localparam integer DW_WORDS    = IN_CH * K_W;
     localparam integer PW_WORDS    = IN_CH * OUT_GROUPS;
-    localparam integer MAX_CYCLES  = 500;
+    localparam integer MAX_CYCLES  = 1000;
 
     logic clk = 1'b0;
     logic rst_n = 1'b0;
@@ -66,7 +69,9 @@ module tb_ds_conv2_engine;
     integer cycle_count;
     integer output_count;
     integer expected_value;
+    integer expected_addr;
     integer error_count;
+    logic overlap_seen;
 
     always #5 clk = ~clk;
 
@@ -132,9 +137,10 @@ module tb_ds_conv2_engine;
             for (kw = 0; kw < K_W; kw = kw + 1) begin
                 dw_weight_mem[kw + K_W*ch] = '0;
                 for (kh = 0; kh < K_H; kh = kh + 1) begin
-                    input_mem[kh + IN_H*(kw + IN_W*ch)] = ch + 1;
                     dw_weight_mem[kw + K_W*ch][kh*WEIGHT_WIDTH +: WEIGHT_WIDTH] = 16'sd1;
                 end
+                for (kh = 0; kh < IN_H; kh = kh + 1)
+                    input_mem[kh + IN_H*(kw + IN_W*ch)] = ch + 1;
             end
         end
 
@@ -172,6 +178,7 @@ module tb_ds_conv2_engine;
         cycle_count = 0;
         output_count = 0;
         error_count = 0;
+        overlap_seen = 1'b0;
 
         repeat (3) @(posedge clk);
         @(negedge clk);
@@ -184,12 +191,14 @@ module tb_ds_conv2_engine;
         wait (done);
         @(posedge clk);
 
-        if ((error_count == 0) && (output_count == OUT_CH)) begin
-            $display("PASS: DS-Conv2 pipeline produced all %0d correct outputs.", OUT_CH);
+        if ((error_count == 0) && (output_count == EXPECTED_OUTPUTS)
+            && overlap_seen) begin
+            $display("PASS: DS-Conv2 pipeline produced all %0d correct outputs.", EXPECTED_OUTPUTS);
+            $display("PASS: calculation and serialized output overlapped.");
             $display("Cycles from start = %0d", cycle_count);
         end else begin
-            $fatal(1, "DS-Conv2 failed: outputs=%0d errors=%0d",
-                   output_count, error_count);
+            $fatal(1, "DS-Conv2 failed: outputs=%0d errors=%0d overlap=%0b",
+                   output_count, error_count, overlap_seen);
         end
         $finish;
     end
@@ -200,23 +209,34 @@ module tb_ds_conv2_engine;
     always @(posedge clk) begin
         if (!rst_n) begin
             cycle_count <= 0;
+            overlap_seen <= 1'b0;
         end else begin
             cycle_count <= cycle_count + 1;
 
+            if (output_valid && dut.dw_read_valid)
+                overlap_seen <= 1'b1;
+
             if (output_valid) begin
                 expected_value = 2310 + output_channel;
+                expected_addr = output_h
+                              + OUT_H * (output_w
+                              + OUT_W * output_channel);
 
-                if ((output_addr !== output_channel) ||
+                if ((output_addr !== expected_addr) ||
                     ($signed(output_data) !== expected_value)) begin
-                    $display("MISMATCH cycle=%0d ch=%0d addr=%0d got=%0d expected=%0d",
-                             cycle_count, output_channel, output_addr,
+                    $display("MISMATCH cycle=%0d h=%0d w=%0d ch=%0d addr=%0d expected_addr=%0d got=%0d expected=%0d",
+                             cycle_count, output_h, output_w, output_channel, output_addr,
+                             expected_addr,
                              $signed(output_data), expected_value);
                     error_count = error_count + 1;
                 end
 
-                if (output_last !== (output_channel == OUT_CH-1)) begin
-                    $display("LAST ERROR cycle=%0d ch=%0d output_last=%0b",
-                             cycle_count, output_channel, output_last);
+                if (output_last !== ((output_h == OUT_H-1)
+                                  && (output_w == OUT_W-1)
+                                  && (output_channel == OUT_CH-1))) begin
+                    $display("LAST ERROR cycle=%0d h=%0d w=%0d ch=%0d output_last=%0b",
+                             cycle_count, output_h, output_w,
+                             output_channel, output_last);
                     error_count = error_count + 1;
                 end
 
