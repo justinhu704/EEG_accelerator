@@ -109,7 +109,9 @@ module tb_conv2_parallel_kh2;
     ) u_old_conv (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(old_busy), .done(old_done),
-        .input_addr(old_input_addr), .input_data(old_input_data),
+        .input_addr(old_input_addr), .input_required_w(),
+        .input_ready(1'b1),
+        .input_data(old_input_data),
         .weight_addr(old_weight_addr), .weight_data(old_weight_data),
         .bias_addr(old_bias_addr), .bias_data(old_bias_data),
         .output_valid(old_valid), .output_addr(old_output_addr),

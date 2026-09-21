@@ -1,5 +1,5 @@
 // Standalone complete CNN + GRU accelerator top.
-// DS-Conv1 and DS-Conv2 exchange data through a five-column rolling buffer.
+// DS-Conv1 and DS-Conv2 exchange data through a six-column rolling buffer.
 module cnn_gru_top #(
     parameter INPUT_FILE = "mem/dsconv1_dsconv2/board/ram_a_sample0_q12.mem",
     parameter INPUT_EVEN_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_even.mem",
@@ -50,11 +50,15 @@ module cnn_gru_top #(
     localparam int RAM_A_DEPTH = 19 * 18 * 20;
     localparam int RAM_ADDR_W = 16;
     localparam int POOL1_ADDR_W = 13;
+    localparam int POOL1_OUT_H = 19;
+    localparam int POOL1_OUT_W = 18;
+    localparam int POOL1_OUT_CH = 20;
+    localparam int POOL1_FIRST_COLUMN_LAST_ADDR =
+                   (POOL1_OUT_H - 1)
+                 + POOL1_OUT_H * POOL1_OUT_W * (POOL1_OUT_CH - 1);
 
-    typedef enum logic [3:0] {
-        S_IDLE, S_START_CONV1, S_RUN_CONV1,
-        S_START_CONV2, S_RUN_CONV2, S_WAIT_POOL1,
-        S_START_CONV3, S_RUN_CONV3,
+    typedef enum logic [2:0] {
+        S_IDLE, S_START_CNN, S_RUN_CNN,
         S_START_GRU, S_RUN_GRU, S_DONE
     } state_t;
     state_t state;
@@ -82,9 +86,14 @@ module cnn_gru_top #(
     logic signed [15:0] conv2_data;
     logic [7:0] conv2_column;
     logic [2:0] conv2_window_slot;
+    logic conv12_start, conv12_busy, conv12_done;
+    logic conv12_finished;
 
     logic conv3_start, conv3_busy, conv3_valid;
     logic [31:0] conv3_input_addr, conv3_addr;
+    logic [31:0] conv3_required_w;
+    logic conv3_input_ready;
+    logic conv3_started;
     logic signed [15:0] conv3_data;
     logic pool1_start, pool1_busy, pool1_done, pool1_valid;
     logic [12:0] pool1_addr;
@@ -103,15 +112,21 @@ module cnn_gru_top #(
     logic signed [15:0] input_shadow_data_kh0, input_shadow_data_kh1;
     logic signed [15:0] conv1_buffer_kh0, conv1_buffer_kh1;
     logic signed [15:0] shared_pool2_gru_data;
+    logic pool1_finished, pool2_finished;
+    logic [4:0] pool1_columns_ready;
+    logic [12:0] pool1_column_last_addr;
 
     always_comb begin
-        conv1_start = (state == S_START_CONV1);
-        conv2_start = (state == S_START_CONV2);
+        conv12_start = (state == S_START_CNN);
         pool1_start = conv2_start && (conv2_column == 0);
-        conv3_start = (state == S_START_CONV3);
+        // Pool1 完成前 5 欄後即可啟動第一個 Conv3 視窗。
+        conv3_start = (state == S_RUN_CNN) && !conv3_started
+                    && (pool1_columns_ready >= 5);
         pool2_start = conv3_start;
         gru_start = (state == S_START_GRU);
         conv2_global_last = conv2_last && (conv2_column == 151);
+        conv3_input_ready = pool1_finished
+                         || (conv3_required_w < pool1_columns_ready);
 
         conv1_addr = conv1_h + 20 * (conv1_column + 156 * conv1_channel);
         conv2_addr = conv2_h + 19 * (conv2_column + 152 * conv2_channel);
@@ -120,7 +135,7 @@ module cnn_gru_top #(
     // RAM A keeps the input, Pool1 output and final GRU result.
     always_comb begin
         ram_a_read_en = result_read_en;
-        if ((state == S_START_CONV3) || (state == S_RUN_CONV3)) begin
+        if (conv3_start || (conv3_started && !pool2_finished)) begin
             ram_a_internal_read_addr = conv3_input_addr[15:0];
             ram_a_read_en = 1'b1;
         end
@@ -191,12 +206,25 @@ module cnn_gru_top #(
         .output_data(conv1_data)
     );
 
-    dsconv12_window_buffer u_conv12_buffer (
+    // 重疊排程器
+    // 6 個 slot 讓 Conv1 寫入下一欄時，Conv2 同時讀取目前 5 欄。
+    dsconv12_overlap_scheduler u_conv12_scheduler (
+        .clk(clk), .rst_n(rst_n), .start(conv12_start),
+        .conv1_column_done(conv1_valid && conv1_last),
+        .conv2_window_done(conv2_valid && conv2_last),
+        .busy(conv12_busy), .done(conv12_done),
+        .conv1_start(conv1_start), .conv1_column(conv1_column),
+        .conv1_write_slot(conv1_write_slot),
+        .conv2_start(conv2_start), .conv2_column(conv2_column),
+        .conv2_window_slot(conv2_window_slot)
+    );
+
+    dsconv12_window_buffer #(.COLS(6)) u_conv12_buffer (
         .clk(clk), .rst_n(rst_n),
         .write_en(conv1_valid), .write_slot(conv1_write_slot),
         .write_h(conv1_h), .write_channel(conv1_channel),
         .write_data(conv1_data),
-        .read_en((state == S_START_CONV2) || (state == S_RUN_CONV2)),
+        .read_en(conv2_start || conv2_busy),
         .window_base_slot(conv2_window_slot),
         .read_h(conv2_input_h),
         .read_kw(conv2_input_kw),
@@ -254,7 +282,8 @@ module cnn_gru_top #(
         .BN_A_FILE(BN3_A_FILE), .BN_B_FILE(BN3_B_FILE)
     ) u_conv3_bn_relu (
         .clk(clk), .rst_n(rst_n), .start(conv3_start), .busy(conv3_busy),
-        .input_addr(conv3_input_addr), .input_data(ram_a_read_data),
+        .input_addr(conv3_input_addr), .input_required_w(conv3_required_w),
+        .input_ready(conv3_input_ready), .input_data(ram_a_read_data),
         .output_valid(conv3_valid), .output_addr(conv3_addr),
         .output_data(conv3_data)
     );
@@ -293,44 +322,46 @@ module cnn_gru_top #(
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= S_IDLE;
-            conv1_column <= '0;
-            conv2_column <= '0;
-            conv1_write_slot <= '0;
-            conv2_window_slot <= '0;
+            conv12_finished <= 1'b0;
+            pool1_finished <= 1'b0;
+            pool2_finished <= 1'b0;
+            conv3_started <= 1'b0;
+            pool1_columns_ready <= '0;
+            pool1_column_last_addr <= POOL1_FIRST_COLUMN_LAST_ADDR;
         end else begin
+            if (conv12_done)
+                conv12_finished <= 1'b1;
+            if (pool1_done)
+                pool1_finished <= 1'b1;
+            if (pool2_done)
+                pool2_finished <= 1'b1;
+            if (conv3_start)
+                conv3_started <= 1'b1;
+
+            // 每當一個 Pool1 欄位的最後一筆寫入 RAM，才公開該欄給 Conv3。
+            if (pool1_valid && (pool1_addr == pool1_column_last_addr)) begin
+                pool1_columns_ready <= pool1_columns_ready + 1'b1;
+                pool1_column_last_addr <= pool1_column_last_addr
+                                        + POOL1_OUT_H;
+            end
+
             case (state)
                 S_IDLE: if (start) begin
-                    conv1_column <= 0; conv2_column <= 0;
-                    conv1_write_slot <= 0; conv2_window_slot <= 0;
-                    state <= S_START_CONV1;
+                    conv12_finished <= 1'b0;
+                    pool1_finished <= 1'b0;
+                    pool2_finished <= 1'b0;
+                    conv3_started <= 1'b0;
+                    pool1_columns_ready <= '0;
+                    pool1_column_last_addr <= POOL1_FIRST_COLUMN_LAST_ADDR;
+                    state <= S_START_CNN;
                 end
-                S_START_CONV1: state <= S_RUN_CONV1;
-                S_RUN_CONV1: if (conv1_valid && conv1_last) begin
-                    if (conv1_column < 4) begin
-                        conv1_column <= conv1_column + 1'b1;
-                        conv1_write_slot <= conv1_write_slot + 1'b1;
-                        state <= S_START_CONV1;
-                    end else begin
-                        state <= S_START_CONV2;
-                    end
+                S_START_CNN: state <= S_RUN_CNN;
+                S_RUN_CNN: begin
+                    if ((conv12_finished || conv12_done) &&
+                        (pool1_finished || pool1_done) &&
+                        (pool2_finished || pool2_done))
+                        state <= S_START_GRU;
                 end
-                S_START_CONV2: state <= S_RUN_CONV2;
-                S_RUN_CONV2: if (conv2_valid && conv2_last) begin
-                    if (conv2_column == 151) begin
-                        state <= S_WAIT_POOL1;
-                    end else begin
-                        conv2_column <= conv2_column + 1'b1;
-                        conv2_window_slot <= (conv2_window_slot == 4)
-                                           ? 0 : conv2_window_slot + 1'b1;
-                        conv1_column <= conv1_column + 1'b1;
-                        conv1_write_slot <= (conv1_write_slot == 4)
-                                          ? 0 : conv1_write_slot + 1'b1;
-                        state <= S_START_CONV1;
-                    end
-                end
-                S_WAIT_POOL1: if (pool1_done) state <= S_START_CONV3;
-                S_START_CONV3: state <= S_RUN_CONV3;
-                S_RUN_CONV3: if (pool2_done) state <= S_START_GRU;
                 S_START_GRU: state <= S_RUN_GRU;
                 S_RUN_GRU: if (gru_done) state <= S_DONE;
                 S_DONE: state <= S_IDLE;
@@ -496,6 +527,8 @@ module conv_bn_relu_parallel_block #(
     input  logic               start,
     output logic               busy,
     output logic [31:0]        input_addr,
+    output logic [31:0]        input_required_w,
+    input  logic               input_ready,
     input  logic signed [15:0] input_data,
     output logic               output_valid,
     output logic [31:0]        output_addr,
@@ -552,7 +585,8 @@ module conv_bn_relu_parallel_block #(
     ) u_conv (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(conv_done_unused),
-        .input_addr(input_addr), .input_data(input_data),
+        .input_addr(input_addr), .input_required_w(input_required_w),
+        .input_ready(input_ready), .input_data(input_data),
         .weight_addr(weight_addr), .weight_data(packed_weight_data),
         .bias_addr(bias_addr), .bias_data(packed_bias_data),
         .output_valid(conv_valid), .output_addr(conv_addr),

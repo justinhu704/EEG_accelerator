@@ -1,10 +1,10 @@
-// Five-column rolling buffer between DS-Conv1 and DS-Conv2.
+// Six-column rolling buffer between DS-Conv1 and DS-Conv2.
 // ReLU1 remains signed 16-bit Q11. Even/odd heights are separate so
 // DS-Conv2 can read kh=0 and kh=1 in the same clock.
 module dsconv12_window_buffer #(
     parameter int IN_H = 20,
     parameter int IN_CH = 21,
-    parameter int COLS = 5
+    parameter int COLS = 6
 ) (
     input  logic clk,
     input  logic rst_n,

@@ -210,14 +210,14 @@ module tb_eeg_cycle_count;
                 $display("==================================================");
                 $display("Controller/start overhead : %0d cycles",
                          conv1_cycle - start_cycle);
-                $display("DS-Conv1/2 + BN/ReLU/Pool1: %0d cycles",
+                $display("Conv1/2 to Conv3 launch   : %0d cycles",
                          conv3_cycle - conv1_cycle);
                 $display("First five Conv1 columns   : %0d cycles",
                          conv2_cycle - conv1_cycle);
-                // Pool2 and Conv3 start together and operate as one streaming
-                // interval, so separate start timestamps cannot divide them.
-                $display("Conv3 + BN3 + ReLU3/Pool2 : %0d cycles",
+                $display("Conv3 launch to GRU       : %0d cycles",
                          gru_cycle - conv3_cycle);
+                $display("Overlapped CNN/Pool path  : %0d cycles",
+                         gru_cycle - conv1_cycle);
                 $display("GRU                       : %0d cycles",
                          fc1_cycle - gru_cycle);
                 $display("FC1 + ReLU + BN           : %0d cycles",

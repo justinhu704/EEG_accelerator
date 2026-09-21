@@ -37,6 +37,7 @@ vlog -sv ../rtl/conv/conv_engine_parallel_kh2.sv
 vlog -sv ../rtl/conv/conv_bn_relu_parallel_kh2_block.sv
 vlog -sv ../rtl/conv/ds_conv2_engine.sv
 vlog -sv ../rtl/conv/ds_conv2_bn_relu_block.sv
+vlog -sv ../rtl/conv/dsconv12_overlap_scheduler.sv
 vlog -sv ../rtl/pooling/maxpool_engine.sv
 vlog -sv ../rtl/pooling/streaming_maxpool.sv
 vlog -sv ../rtl/pooling/dsconv_streaming_pool.sv

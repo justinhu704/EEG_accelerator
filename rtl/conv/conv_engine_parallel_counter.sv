@@ -21,6 +21,8 @@ module conv_engine_parallel_counter #(
     output logic                         done,
 
     output logic [31:0]                  input_addr,
+    output logic [31:0]                  input_required_w,
+    input  logic                         input_ready,
     input  logic signed [15:0]           input_data,
 
     output logic [31:0]                  weight_addr,
@@ -134,6 +136,8 @@ module conv_engine_parallel_counter #(
         // input feature map address
         input_addr = '0;
         input_addr[INPUT_ADDR_W-1:0] = input_addr_count;
+        input_required_w = {{(32-OUT_W_W){1'b0}}, out_w_count}
+                         + {{(32-K_W_W){1'b0}}, kw_count};
 
         // weight address
         weight_addr = '0;
@@ -198,7 +202,7 @@ module conv_engine_parallel_counter #(
             weight_data_d <= '0;
         end else begin
             // Activation RAM and packed weight ROM both have one-clock latency.
-            data_valid <= (state == S_STREAM);
+            data_valid <= (state == S_STREAM) && input_ready;
 
             // 只有啟用時才增加一級 MAC 輸入 pipeline。
             if (REGISTER_MAC_INPUTS) begin
@@ -246,7 +250,11 @@ module conv_engine_parallel_counter #(
                 // current counters. Prepare the next address for the next edge.
                 // start mac operation
                 S_STREAM: begin
-                    if (kh_count < K_H-1) begin
+                    // 尚未完成的 Pool1 欄位不可以送入 MAC；所有 counter
+                    // 與位址保持不動，資料到齊後再從同一點繼續。
+                    if (!input_ready) begin
+                        state <= S_STREAM;
+                    end else if (kh_count < K_H-1) begin
                         kh_count <= kh_count + 1'b1;
                         input_addr_count
                             <= input_addr_count + INPUT_KH_STEP;
