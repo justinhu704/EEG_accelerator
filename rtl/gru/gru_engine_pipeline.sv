@@ -120,6 +120,10 @@ module gru_engine_pipeline #(
         S_UH_DRAIN,
         S_ACT_ISSUE,
         S_ACT_DRAIN,
+        S_HM_CAND_MUL,
+        S_HM_PREV_MUL,
+        S_HM_ADD,
+        S_HM_WRITE,
         S_COMMIT,
         S_DONE
     } state_t;
@@ -134,6 +138,7 @@ module gru_engine_pipeline #(
     logic [HIDDEN_INDEX_W-1:0] gated_hidden_index;
     logic [HIDDEN_INDEX_W-1:0] hidden_copy_index;
     logic load_data_valid;
+    logic [31:0] input_addr_counter;
 
     logic signed [63:0] reset_accumulator;
     logic signed [63:0] update_accumulator;
@@ -145,55 +150,41 @@ module gru_engine_pipeline #(
     logic signed [15:0] reset_bias_s1;
     logic signed [15:0] update_bias_s1;
 
-    // Wr/Wz pipeline: weight/data register -> multiply -> accumulator.
-    logic signed [15:0] wr_weight_s1;
-    logic signed [15:0] wz_weight_s1;
-    logic signed [15:0] gate_input_data_s1;
-    logic gate_input_valid_s1;
-    logic gate_input_last_s1;
-    logic signed [31:0] wr_product_s2;
-    logic signed [31:0] wz_product_s2;
-    logic gate_input_valid_s2;
-    logic gate_input_last_s2;
+    // Shared reset/update gate pipeline. S_GATE_INPUT and
+    // S_GATE_RECURRENT are mutually exclusive, so Wr/Ur share one
+    // multiplier and Wz/Uz share another without changing throughput.
+    logic signed [15:0] gate_reset_weight_s1;
+    logic signed [15:0] gate_update_weight_s1;
+    logic signed [15:0] gate_data_s1;
+    logic gate_valid_s1;
+    logic gate_last_s1;
+    logic gate_recurrent_s1;
+    logic signed [31:0] gate_reset_product_s2;
+    logic signed [31:0] gate_update_product_s2;
+    logic gate_valid_s2;
+    logic gate_last_s2;
+    logic gate_recurrent_s2;
 
-    // Ur/Uz pipeline: weight/data register -> multiply -> accumulator.
-    logic signed [15:0] ur_weight_s1;
-    logic signed [15:0] uz_weight_s1;
-    logic signed [15:0] gate_recurrent_data_s1;
-    logic gate_recurrent_valid_s1;
-    logic gate_recurrent_last_s1;
-    logic signed [31:0] ur_product_s2;
-    logic signed [31:0] uz_product_s2;
-    logic gate_recurrent_valid_s2;
-    logic gate_recurrent_last_s2;
-
-    // Wh pipeline: synchronous ROM read -> 16x16 multiply -> banked add.
+    // Shared Wh/Uh pipeline. The 16-bit Wh operand is sign-extended to the
+    // 32-bit Uh datapath so both mutually-exclusive phases use one 16x32
+    // signed multiplier.
     logic [INPUT_ADDR_W-1:0] wh_addr;
     logic [INPUT_INDEX_W-1:0] wh_feature;
     logic [HIDDEN_INDEX_W-1:0] wh_neuron;
-    logic signed [15:0] wh_weight_s1;
-    logic signed [15:0] wh_data_s1;
-    logic [HIDDEN_INDEX_W-1:0] wh_neuron_s1;
-    logic wh_valid_s1;
-    logic wh_last_s1;
-    logic signed [31:0] wh_product_s2;
-    logic [HIDDEN_INDEX_W-1:0] wh_neuron_s2;
-    logic wh_valid_s2;
-    logic wh_last_s2;
-
-    // Uh pipeline: synchronous ROM read -> 16x32 multiply -> banked add.
     logic [RECURRENT_ADDR_W-1:0] uh_addr;
     logic [HIDDEN_INDEX_W-1:0] uh_recurrent;
     logic [HIDDEN_INDEX_W-1:0] uh_neuron;
-    logic signed [15:0] uh_weight_s1;
-    logic signed [31:0] uh_data_s1;
-    logic [HIDDEN_INDEX_W-1:0] uh_neuron_s1;
-    logic uh_valid_s1;
-    logic uh_last_s1;
-    logic signed [47:0] uh_product_s2;
-    logic [HIDDEN_INDEX_W-1:0] uh_neuron_s2;
-    logic uh_valid_s2;
-    logic uh_last_s2;
+    logic signed [15:0] candidate_weight_s1;
+    logic signed [31:0] candidate_data_s1;
+    logic [HIDDEN_INDEX_W-1:0] candidate_neuron_s1;
+    logic candidate_valid_s1;
+    logic candidate_last_s1;
+    logic candidate_is_uh_s1;
+    logic signed [47:0] candidate_product_s2;
+    logic [HIDDEN_INDEX_W-1:0] candidate_neuron_s2;
+    logic candidate_valid_s2;
+    logic candidate_last_s2;
+    logic candidate_is_uh_s2;
 
     logic sigmoid_in_valid;
     logic signed [15:0] reset_lut_input;
@@ -213,23 +204,16 @@ module gru_engine_pipeline #(
     logic signed [15:0] tanh_output;
     logic [HIDDEN_INDEX_W-1:0] tanh_neuron_d1;
 
-    // Hidden mix pipeline.
-    // h_new = (1-z)*candidate + z*h_previous, all operands in Q15.
-    logic hm_valid_s0;
-    logic signed [15:0] hm_candidate_s0;
-    logic signed [16:0] hm_update_s0;
-    logic signed [16:0] hm_one_minus_s0;
-    logic signed [15:0] hm_hidden_s0;
-    logic [HIDDEN_INDEX_W-1:0] hm_neuron_s0;
-
-    logic hm_valid_s1;
-    logic signed [32:0] hm_candidate_product_s1;
-    logic signed [32:0] hm_previous_product_s1;
-    logic [HIDDEN_INDEX_W-1:0] hm_neuron_s1;
-
-    logic hm_valid_s2;
+    // Hidden mix uses one time-multiplexed multiplier:
+    // (1-z)*candidate, then z*h_previous, then add and write.
+    logic signed [15:0] candidate_state [0:HIDDEN_SIZE-1];
+    logic [HIDDEN_INDEX_W-1:0] hm_neuron;
+    logic hm_mul_en;
+    logic signed [16:0] hm_mul_a;
+    logic signed [15:0] hm_mul_b;
+    logic signed [32:0] hm_product_s1;
+    logic signed [32:0] hm_candidate_product;
     logic signed [63:0] hm_sum_s2;
-    logic [HIDDEN_INDEX_W-1:0] hm_neuron_s2;
 
     integer loop_index;
 
@@ -279,10 +263,33 @@ module gru_engine_pipeline #(
     );
 
     always_comb begin
-        input_addr = $unsigned(time_index)
-                   + TIME_STEPS * $unsigned(issue_index);
+        input_addr = input_addr_counter;
         busy = (state != S_IDLE) && (state != S_DONE);
         done = (state == S_DONE);
+    end
+
+    // A single multiplier is explicitly fed by the two mutually-exclusive
+    // hidden-mix phases so synthesis cannot create two parallel multipliers.
+    always_comb begin
+        hm_mul_en = 1'b0;
+        hm_mul_a = '0;
+        hm_mul_b = '0;
+
+        case (state)
+            S_HM_CAND_MUL: begin
+                hm_mul_en = 1'b1;
+                hm_mul_a = 17'sd32768
+                         - $signed({1'b0, update_gate[hm_neuron]});
+                hm_mul_b = candidate_state[hm_neuron];
+            end
+            S_HM_PREV_MUL: begin
+                hm_mul_en = 1'b1;
+                hm_mul_a = $signed({1'b0, update_gate[hm_neuron]});
+                hm_mul_b = hidden_state[hm_neuron];
+            end
+            default: begin
+            end
+        endcase
     end
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -297,6 +304,7 @@ module gru_engine_pipeline #(
             gated_hidden_index <= '0;
             hidden_copy_index <= '0;
             load_data_valid <= 1'b0;
+            input_addr_counter <= '0;
             reset_accumulator <= '0;
             update_accumulator <= '0;
             gate_input_addr <= '0;
@@ -304,70 +312,45 @@ module gru_engine_pipeline #(
             reset_bias_s1 <= '0;
             update_bias_s1 <= '0;
 
-            wr_weight_s1 <= '0;
-            wz_weight_s1 <= '0;
-            gate_input_data_s1 <= '0;
-            gate_input_valid_s1 <= 1'b0;
-            gate_input_last_s1 <= 1'b0;
-            wr_product_s2 <= '0;
-            wz_product_s2 <= '0;
-            gate_input_valid_s2 <= 1'b0;
-            gate_input_last_s2 <= 1'b0;
-
-            ur_weight_s1 <= '0;
-            uz_weight_s1 <= '0;
-            gate_recurrent_data_s1 <= '0;
-            gate_recurrent_valid_s1 <= 1'b0;
-            gate_recurrent_last_s1 <= 1'b0;
-            ur_product_s2 <= '0;
-            uz_product_s2 <= '0;
-            gate_recurrent_valid_s2 <= 1'b0;
-            gate_recurrent_last_s2 <= 1'b0;
+            gate_reset_weight_s1 <= '0;
+            gate_update_weight_s1 <= '0;
+            gate_data_s1 <= '0;
+            gate_valid_s1 <= 1'b0;
+            gate_last_s1 <= 1'b0;
+            gate_recurrent_s1 <= 1'b0;
+            gate_reset_product_s2 <= '0;
+            gate_update_product_s2 <= '0;
+            gate_valid_s2 <= 1'b0;
+            gate_last_s2 <= 1'b0;
+            gate_recurrent_s2 <= 1'b0;
 
             wh_addr <= '0;
             wh_feature <= '0;
             wh_neuron <= '0;
-            wh_weight_s1 <= '0;
-            wh_data_s1 <= '0;
-            wh_neuron_s1 <= '0;
-            wh_valid_s1 <= 1'b0;
-            wh_last_s1 <= 1'b0;
-            wh_product_s2 <= '0;
-            wh_neuron_s2 <= '0;
-            wh_valid_s2 <= 1'b0;
-            wh_last_s2 <= 1'b0;
-
             uh_addr <= '0;
             uh_recurrent <= '0;
             uh_neuron <= '0;
-            uh_weight_s1 <= '0;
-            uh_data_s1 <= '0;
-            uh_neuron_s1 <= '0;
-            uh_valid_s1 <= 1'b0;
-            uh_last_s1 <= 1'b0;
-            uh_product_s2 <= '0;
-            uh_neuron_s2 <= '0;
-            uh_valid_s2 <= 1'b0;
-            uh_last_s2 <= 1'b0;
+            candidate_weight_s1 <= '0;
+            candidate_data_s1 <= '0;
+            candidate_neuron_s1 <= '0;
+            candidate_valid_s1 <= 1'b0;
+            candidate_last_s1 <= 1'b0;
+            candidate_is_uh_s1 <= 1'b0;
+            candidate_product_s2 <= '0;
+            candidate_neuron_s2 <= '0;
+            candidate_valid_s2 <= 1'b0;
+            candidate_last_s2 <= 1'b0;
+            candidate_is_uh_s2 <= 1'b0;
 
             activation_neuron <= '0;
             activation_lut_valid <= 1'b0;
             activation_lut_input <= '0;
             activation_lut_neuron <= '0;
             tanh_neuron_d1 <= '0;
-            hm_valid_s0 <= 1'b0;
-            hm_candidate_s0 <= '0;
-            hm_update_s0 <= '0;
-            hm_one_minus_s0 <= '0;
-            hm_hidden_s0 <= '0;
-            hm_neuron_s0 <= '0;
-            hm_valid_s1 <= 1'b0;
-            hm_candidate_product_s1 <= '0;
-            hm_previous_product_s1 <= '0;
-            hm_neuron_s1 <= '0;
-            hm_valid_s2 <= 1'b0;
+            hm_neuron <= '0;
+            hm_product_s1 <= '0;
+            hm_candidate_product <= '0;
             hm_sum_s2 <= '0;
-            hm_neuron_s2 <= '0;
 
             output_valid <= 1'b0;
             activation_lut_valid <= 1'b0;
@@ -383,6 +366,7 @@ module gru_engine_pipeline #(
                 update_gate[loop_index] <= '0;
                 gated_hidden[loop_index] <= '0;
                 candidate_accumulator[loop_index] <= '0;
+                candidate_state[loop_index] <= '0;
             end
         // IDLE 等待 UART 時保持所有 GRU pipeline 暫存器。
         end else if ((state != S_IDLE) || start) begin
@@ -393,146 +377,86 @@ module gru_engine_pipeline #(
             // Reset/Update Gate Pipeline
             // Stage 1 權重與資料暫存 -> Stage 2 乘法 -> Stage 3 累加
             // -------------------------------------------------------------
-            gate_input_valid_s1 <= 1'b0;
-            gate_input_valid_s2 <= gate_input_valid_s1;
-            gate_input_last_s2 <= gate_input_last_s1;
-            if (gate_input_valid_s1) begin
-                wr_product_s2 <= $signed(wr_weight_s1)
-                               * $signed(gate_input_data_s1);
-                wz_product_s2 <= $signed(wz_weight_s1)
-                               * $signed(gate_input_data_s1);
-            end
-
-            gate_recurrent_valid_s1 <= 1'b0;
-            gate_recurrent_valid_s2 <= gate_recurrent_valid_s1;
-            gate_recurrent_last_s2 <= gate_recurrent_last_s1;
-            if (gate_recurrent_valid_s1) begin
-                ur_product_s2 <= $signed(ur_weight_s1)
-                               * $signed(gate_recurrent_data_s1);
-                uz_product_s2 <= $signed(uz_weight_s1)
-                               * $signed(gate_recurrent_data_s1);
+            gate_valid_s1 <= 1'b0;
+            gate_valid_s2 <= gate_valid_s1;
+            gate_last_s2 <= gate_last_s1;
+            gate_recurrent_s2 <= gate_recurrent_s1;
+            if (gate_valid_s1) begin
+                gate_reset_product_s2 <= $signed(gate_reset_weight_s1)
+                                       * $signed(gate_data_s1);
+                gate_update_product_s2 <= $signed(gate_update_weight_s1)
+                                        * $signed(gate_data_s1);
             end
 
             // 乘法結果已經過暫存，這一級只保留64-bit累加器加法。
-            if (gate_input_valid_s2) begin
-                reset_accumulator <= reset_accumulator
-                                   + ($signed(wr_product_s2) <<< 4);
-                update_accumulator <= update_accumulator
-                                    + ($signed(wz_product_s2) <<< 4);
-            end else if (gate_recurrent_valid_s2) begin
-                reset_accumulator <= reset_accumulator
-                                   + ($signed(ur_product_s2) <<< 1);
-                update_accumulator <= update_accumulator
-                                    + $signed(uz_product_s2);
+            if (gate_valid_s2) begin
+                if (!gate_recurrent_s2) begin
+                    reset_accumulator <= reset_accumulator
+                                       + ($signed(gate_reset_product_s2) <<< 4);
+                    update_accumulator <= update_accumulator
+                                        + ($signed(gate_update_product_s2) <<< 4);
+                end else begin
+                    reset_accumulator <= reset_accumulator
+                                       + ($signed(gate_reset_product_s2) <<< 1);
+                    update_accumulator <= update_accumulator
+                                        + $signed(gate_update_product_s2);
+                end
             end
 
             // -------------------------------------------------------------
-            // Wh, Uh Pipeline: Stage 1 -> Stage 2 -> 寫入累加器
+            // Shared Wh/Uh Pipeline: Stage 1 -> Stage 2 -> accumulator
             // -------------------------------------------------------------
-            wh_valid_s1 <= 1'b0;
-            wh_valid_s2 <= wh_valid_s1;
-            wh_last_s2 <= wh_last_s1;
-            // Wh 乘積 (Stage 1)
-            if (wh_valid_s1) begin
-                wh_product_s2 <= $signed(wh_weight_s1)
-                               * $signed(wh_data_s1);
-                wh_neuron_s2 <= wh_neuron_s1;
-            end
-
-            uh_valid_s1 <= 1'b0;
-            uh_valid_s2 <= uh_valid_s1;
-            uh_last_s2 <= uh_last_s1;
-            // Uh 乘積 (Stage 1)
-            if (uh_valid_s1) begin
-                uh_product_s2 <= $signed(uh_weight_s1)
-                               * $signed(uh_data_s1);
-                uh_neuron_s2 <= uh_neuron_s1;
+            candidate_valid_s1 <= 1'b0;
+            candidate_valid_s2 <= candidate_valid_s1;
+            candidate_last_s2 <= candidate_last_s1;
+            candidate_is_uh_s2 <= candidate_is_uh_s1;
+            if (candidate_valid_s1) begin
+                candidate_product_s2 <= $signed(candidate_weight_s1)
+                                      * $signed(candidate_data_s1);
+                candidate_neuron_s2 <= candidate_neuron_s1;
             end
 
             // 當 Stage 2 有效時，自動歸類加進專屬的神經元累加器中
-            if (wh_valid_s2) begin
-                candidate_accumulator[wh_neuron_s2]
-                    <= candidate_accumulator[wh_neuron_s2]
-                     + ($signed({{32{wh_product_s2[31]}}, wh_product_s2})
-                        <<< 18);
-            end else if (uh_valid_s2) begin
-                candidate_accumulator[uh_neuron_s2]
-                    <= candidate_accumulator[uh_neuron_s2]
-                     + $signed({{16{uh_product_s2[47]}}, uh_product_s2});
+            if (candidate_valid_s2) begin
+                if (!candidate_is_uh_s2) begin
+                    candidate_accumulator[candidate_neuron_s2]
+                        <= candidate_accumulator[candidate_neuron_s2]
+                         + ($signed({{16{candidate_product_s2[47]}},
+                                      candidate_product_s2}) <<< 18);
+                end else begin
+                    candidate_accumulator[candidate_neuron_s2]
+                        <= candidate_accumulator[candidate_neuron_s2]
+                         + $signed({{16{candidate_product_s2[47]}},
+                                    candidate_product_s2});
+                end
             end
 
             // 記錄 tanh 計算的目標神經元
             if (tanh_in_valid)
                 tanh_neuron_d1 <= activation_lut_neuron;
+            if (tanh_out_valid)
+                candidate_state[tanh_neuron_d1] <= tanh_output;
 
-            // -------------------------------------------------------------
-            // Hidden Mix 三級管線： Stage 0 -> Stage 1 -> Stage 2 -> 輸出
-            // -------------------------------------------------------------
-            // Stage 0: 鎖存 Tanh 結果與運算元
-            hm_valid_s0 <= tanh_out_valid;
-            if (tanh_out_valid) begin
-                hm_candidate_s0 <= tanh_output;
-                hm_update_s0 <= $signed({1'b0,
-                                         update_gate[tanh_neuron_d1]});
-                hm_one_minus_s0 <= 17'sd32768
-                                 - $signed({1'b0,
-                                            update_gate[tanh_neuron_d1]});
-                hm_hidden_s0 <= hidden_state[tanh_neuron_d1];
-                hm_neuron_s0 <= tanh_neuron_d1;
-            end
-
-            // Stage 1: 兩顆 DSP 執行平行乘法
-            hm_valid_s1 <= hm_valid_s0;
-            if (hm_valid_s0) begin
-                hm_candidate_product_s1 <= $signed(hm_one_minus_s0)
-                                         * $signed(hm_candidate_s0);
-                hm_previous_product_s1 <= $signed(hm_update_s0)
-                                        * $signed(hm_hidden_s0);
-                hm_neuron_s1 <= hm_neuron_s0;
-            end
-
-            // Stage 2: 相加
-            hm_valid_s2 <= hm_valid_s1;
-            if (hm_valid_s1) begin
-                hm_sum_s2
-                    <= $signed({{31{hm_candidate_product_s1[32]}},
-                                 hm_candidate_product_s1})
-                     + $signed({{31{hm_previous_product_s1[32]}},
-                                 hm_previous_product_s1});
-                hm_neuron_s2 <= hm_neuron_s1;
-            end
-
-            // 最終 Stage: 右移、飽和截斷，並立刻拉高 output_valid
-            if (hm_valid_s2) begin
-                hidden_next[hm_neuron_s2]
-                    <= saturate16(hm_sum_s2 >>> 15);
-                output_valid <= 1'b1;
-                output_addr <= $unsigned(hm_neuron_s2)
-                             + HIDDEN_SIZE * $unsigned(time_index);
-                output_data <= saturate16(hm_sum_s2 >>> 15);
-            end
+            // The one physical hidden-mix multiplier is driven by hm_mul_a/b.
+            if (hm_mul_en)
+                hm_product_s1 <= $signed(hm_mul_a) * $signed(hm_mul_b);
 
             case (state)
                 S_IDLE: begin
                     load_data_valid <= 1'b0;
                     if (start) begin
                         time_index <= '0;
-                        gate_input_valid_s1 <= 1'b0;
-                        gate_input_valid_s2 <= 1'b0;
-                        gate_recurrent_valid_s1 <= 1'b0;
-                        gate_recurrent_valid_s2 <= 1'b0;
-                        wh_valid_s1 <= 1'b0;
-                        wh_valid_s2 <= 1'b0;
-                        uh_valid_s1 <= 1'b0;
-                        uh_valid_s2 <= 1'b0;
-                        hm_valid_s0 <= 1'b0;
-                        hm_valid_s1 <= 1'b0;
-                        hm_valid_s2 <= 1'b0;
+                        input_addr_counter <= '0;
+                        gate_valid_s1 <= 1'b0;
+                        gate_valid_s2 <= 1'b0;
+                        candidate_valid_s1 <= 1'b0;
+                        candidate_valid_s2 <= 1'b0;
                         activation_lut_valid <= 1'b0;
                         for (loop_index = 0; loop_index < HIDDEN_SIZE;
                              loop_index = loop_index + 1) begin
                             hidden_state[loop_index] <= '0;
                             hidden_next[loop_index] <= '0;
+                            candidate_state[loop_index] <= '0;
                         end
                         state <= S_PREP_X;
                     end
@@ -542,6 +466,7 @@ module gru_engine_pipeline #(
                     issue_index <= '0;
                     receive_index <= '0;
                     load_data_valid <= 1'b0;
+                    input_addr_counter <= $unsigned(time_index);
                     state <= S_LOAD_X;
                 end
 
@@ -556,8 +481,11 @@ module gru_engine_pipeline #(
                     // 讀完所有 input data(15 個)
                     if (issue_index == INPUT_SIZE-1)
                         state <= S_LOAD_DRAIN;
-                    else
+                    else begin
                         issue_index <= issue_index + 1'b1;
+                        input_addr_counter <= input_addr_counter
+                                            + TIME_STEPS;
+                    end
                 end
 
                 S_LOAD_DRAIN: begin
@@ -576,10 +504,8 @@ module gru_engine_pipeline #(
                     update_bias_s1 <= bz_mem[gate_neuron];
                     gate_input_addr <= gate_neuron;
                     gate_recurrent_addr <= gate_neuron;
-                    gate_input_valid_s1 <= 1'b0;
-                    gate_input_valid_s2 <= 1'b0;
-                    gate_recurrent_valid_s1 <= 1'b0;
-                    gate_recurrent_valid_s2 <= 1'b0;
+                    gate_valid_s1 <= 1'b0;
+                    gate_valid_s2 <= 1'b0;
                     state <= S_GATE_BIAS;
                 end
 
@@ -595,11 +521,12 @@ module gru_engine_pipeline #(
                 // 與 Wr Wz 做 mac
                 // 每個 clock 發出一筆，乘法與累加由上方 pipeline 接手。
                 S_GATE_INPUT: begin
-                    wr_weight_s1 <= wr_mem[gate_input_addr];
-                    wz_weight_s1 <= wz_mem[gate_input_addr];
-                    gate_input_data_s1 <= x_buffer[feature_index];
-                    gate_input_valid_s1 <= 1'b1;
-                    gate_input_last_s1 <= (feature_index == INPUT_SIZE-1);
+                    gate_reset_weight_s1 <= wr_mem[gate_input_addr];
+                    gate_update_weight_s1 <= wz_mem[gate_input_addr];
+                    gate_data_s1 <= x_buffer[feature_index];
+                    gate_valid_s1 <= 1'b1;
+                    gate_last_s1 <= (feature_index == INPUT_SIZE-1);
+                    gate_recurrent_s1 <= 1'b0;
 
                     if (feature_index == INPUT_SIZE-1) begin
                         state <= S_GATE_INPUT_DRAIN;
@@ -611,19 +538,19 @@ module gru_engine_pipeline #(
 
                 // 等待 Wr/Wz 最後一筆乘積寫入 accumulator。
                 S_GATE_INPUT_DRAIN: begin
-                    if (gate_input_valid_s2 && gate_input_last_s2)
+                    if (gate_valid_s2 && gate_last_s2
+                        && !gate_recurrent_s2)
                         state <= S_GATE_RECURRENT;
                 end
 
                 // 與遞迴權重 Ur Uz 做 mac
                 S_GATE_RECURRENT: begin
-                    ur_weight_s1 <= ur_mem[gate_recurrent_addr];
-                    uz_weight_s1 <= uz_mem[gate_recurrent_addr];
-                    gate_recurrent_data_s1
-                        <= hidden_state[recurrent_index];
-                    gate_recurrent_valid_s1 <= 1'b1;
-                    gate_recurrent_last_s1
-                        <= (recurrent_index == HIDDEN_SIZE-1);
+                    gate_reset_weight_s1 <= ur_mem[gate_recurrent_addr];
+                    gate_update_weight_s1 <= uz_mem[gate_recurrent_addr];
+                    gate_data_s1 <= hidden_state[recurrent_index];
+                    gate_valid_s1 <= 1'b1;
+                    gate_last_s1 <= (recurrent_index == HIDDEN_SIZE-1);
+                    gate_recurrent_s1 <= 1'b1;
 
                     if (recurrent_index == HIDDEN_SIZE-1) begin
                         state <= S_GATE_RECURRENT_DRAIN;
@@ -636,7 +563,8 @@ module gru_engine_pipeline #(
 
                 // 等待 Ur/Uz 最後一筆乘積寫入 accumulator。
                 S_GATE_RECURRENT_DRAIN: begin
-                    if (gate_recurrent_valid_s2 && gate_recurrent_last_s2)
+                    if (gate_valid_s2 && gate_last_s2
+                        && gate_recurrent_s2)
                         state <= S_GATE_LUT;
                 end
 
@@ -689,18 +617,22 @@ module gru_engine_pipeline #(
                     wh_addr <= '0;
                     wh_feature <= '0;
                     wh_neuron <= '0;
-                    wh_valid_s1 <= 1'b0;
-                    wh_valid_s2 <= 1'b0;
+                    candidate_valid_s1 <= 1'b0;
+                    candidate_valid_s2 <= 1'b0;
                     state <= S_WH_ISSUE;
                 end
 
                 // Wh * x：Weight 為 column-major，所以一條 address 間隔9個 memory (135 cycles)
                 S_WH_ISSUE: begin
-                    wh_weight_s1 <= wh_mem[wh_addr];
-                    wh_data_s1 <= x_buffer[wh_feature];
-                    wh_neuron_s1 <= wh_neuron;
-                    wh_last_s1 <= (wh_addr == INPUT_WEIGHT_DEPTH-1);
-                    wh_valid_s1 <= 1'b1;
+                    candidate_weight_s1 <= wh_mem[wh_addr];
+                    candidate_data_s1
+                        <= {{16{x_buffer[wh_feature][15]}},
+                            x_buffer[wh_feature]};
+                    candidate_neuron_s1 <= wh_neuron;
+                    candidate_last_s1
+                        <= (wh_addr == INPUT_WEIGHT_DEPTH-1);
+                    candidate_is_uh_s1 <= 1'b0;
+                    candidate_valid_s1 <= 1'b1;
 
                     // 135 個Wh做完 mac
                     if (wh_addr == INPUT_WEIGHT_DEPTH-1) begin
@@ -718,23 +650,26 @@ module gru_engine_pipeline #(
 
                 // 等待 Wh pipeline 清空 (2 cycle)
                 S_WH_DRAIN: begin
-                    if (wh_valid_s2 && wh_last_s2) begin
+                    if (candidate_valid_s2 && candidate_last_s2
+                        && !candidate_is_uh_s2) begin
                         uh_addr <= '0;
                         uh_recurrent <= '0;
                         uh_neuron <= '0;
-                        uh_valid_s1 <= 1'b0;
-                        uh_valid_s2 <= 1'b0;
+                        candidate_valid_s1 <= 1'b0;
+                        candidate_valid_s2 <= 1'b0;
                         state <= S_UH_ISSUE;
                     end
                 end
 
                 // Uh * h: Weight 為 column-major，所以一條 address 間隔9個 memory (81 cycles)
                 S_UH_ISSUE: begin
-                    uh_weight_s1 <= uh_mem[uh_addr];
-                    uh_data_s1 <= gated_hidden[uh_recurrent];
-                    uh_neuron_s1 <= uh_neuron;
-                    uh_last_s1 <= (uh_addr == RECURRENT_WEIGHT_DEPTH-1);
-                    uh_valid_s1 <= 1'b1;
+                    candidate_weight_s1 <= uh_mem[uh_addr];
+                    candidate_data_s1 <= gated_hidden[uh_recurrent];
+                    candidate_neuron_s1 <= uh_neuron;
+                    candidate_last_s1
+                        <= (uh_addr == RECURRENT_WEIGHT_DEPTH-1);
+                    candidate_is_uh_s1 <= 1'b1;
+                    candidate_valid_s1 <= 1'b1;
 
                     if (uh_addr == RECURRENT_WEIGHT_DEPTH-1) begin
                         state <= S_UH_DRAIN;
@@ -751,7 +686,8 @@ module gru_engine_pipeline #(
 
                 // 等待 Uh pipeline 清空 (2 cycle)
                 S_UH_DRAIN: begin
-                    if (uh_valid_s2 && uh_last_s2) begin
+                    if (candidate_valid_s2 && candidate_last_s2
+                        && candidate_is_uh_s2) begin
                         activation_neuron <= '0;
                         state <= S_ACT_ISSUE;
                     end
@@ -772,12 +708,47 @@ module gru_engine_pipeline #(
                         activation_neuron <= activation_neuron + 1'b1;
                 end
 
-                // 等待 Hidden_Mix 完成 (4 cycle)
+                // Wait until all nine tanh results have been stored.
                 S_ACT_DRAIN: begin
-                    if (hm_valid_s2 &&
-                        (hm_neuron_s2 == HIDDEN_SIZE-1)) begin
+                    if (tanh_out_valid &&
+                        (tanh_neuron_d1 == HIDDEN_SIZE-1)) begin
+                        hm_neuron <= '0;
+                        state <= S_HM_CAND_MUL;
+                    end
+                end
+
+                // One multiplier performs both products for each hidden unit.
+                S_HM_CAND_MUL:
+                    state <= S_HM_PREV_MUL;
+
+                S_HM_PREV_MUL: begin
+                    hm_candidate_product <= hm_product_s1;
+                    state <= S_HM_ADD;
+                end
+
+                S_HM_ADD: begin
+                    hm_sum_s2
+                        <= $signed({{31{hm_candidate_product[32]}},
+                                     hm_candidate_product})
+                         + $signed({{31{hm_product_s1[32]}},
+                                     hm_product_s1});
+                    state <= S_HM_WRITE;
+                end
+
+                S_HM_WRITE: begin
+                    hidden_next[hm_neuron]
+                        <= saturate16(hm_sum_s2 >>> 15);
+                    output_valid <= 1'b1;
+                    output_addr <= $unsigned(hm_neuron)
+                                 + HIDDEN_SIZE * $unsigned(time_index);
+                    output_data <= saturate16(hm_sum_s2 >>> 15);
+
+                    if (hm_neuron == HIDDEN_SIZE-1) begin
                         hidden_copy_index <= '0;
                         state <= S_COMMIT;
+                    end else begin
+                        hm_neuron <= hm_neuron + 1'b1;
+                        state <= S_HM_CAND_MUL;
                     end
                 end
 

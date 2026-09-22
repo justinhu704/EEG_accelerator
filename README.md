@@ -92,10 +92,10 @@ The latest complete ModelSim regression uses the 10 ns period from
 | Measurement | Current result |
 |---|---:|
 | Clock used for cycle-to-time conversion | 100 MHz |
-| Complete inference | 556,030 cycles |
-| Calculated inference time | 5.5603 ms |
+| Complete inference | 556,624 cycles |
+| Calculated inference time | 5.56624 ms |
 | Main model operations | 5,389,008 operations |
-| Effective throughput | 0.969 GOPS |
+| Effective throughput | 0.968 GOPS |
 | Produced logits | 105 |
 | Regression prediction | Class 0 |
 | Maximum checked layer difference | 2 LSB |
@@ -113,9 +113,22 @@ The latest 105-subject UART demonstration produced 101 correct predictions out
 of 105, or 96.19%. This number describes the one-sample-per-subject demo set; it
 is not a replacement for complete test-set accuracy.
 
-The current source changes have not yet been through a new Quartus Full
-Compilation. Updated Fmax, ALM, register, M10K, DSP, and Power Analyzer results
-must therefore be taken from the next build rather than from older reports.
+The latest Quartus Full Compilation for the Cyclone V `5CSEMA5F31C6` completed
+without errors. The post-fit results are:
+
+| Post-fit measurement | Current result |
+|---|---:|
+| Slow-corner Fmax | 109.37 MHz |
+| Worst 100 MHz setup slack | +0.857 ns |
+| Logic utilization | 4,991 / 32,070 ALMs (16%) |
+| Registers | 7,300 |
+| M10K blocks | 78 / 397 (20%) |
+| Block-memory bits | 457,072 / 4,065,280 (11%) |
+| DSP blocks | 31 / 87 (36%) |
+| GRU DSP blocks | 9 |
+
+Power Analyzer was not enabled in this compilation, so power must be measured
+separately with the activity-based power flow before reporting a new value.
 
 ## Clock and UART
 
