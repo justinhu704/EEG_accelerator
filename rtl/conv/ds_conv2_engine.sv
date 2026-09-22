@@ -389,8 +389,8 @@ module ds_conv2_engine #(
                     // 進行 Quantization
                     dw_quantized_value = quantize_dw(dw_final_sum, dw_pair_bias);
 
-                    // K_W=5，兩個完成值間有五拍，足以排入四個 PW group。
-                    // 目前 channel
+                    // 多 channel 時，PW groups 會排入相鄰 DW 完成值之間；
+                    // 單一 input channel 則可在 S_DRAIN 完整送完所有 groups。
                     pw_pending_channel    <= dw_pair_channel;
                     pw_pending_activation <= dw_quantized_value;
                     pw_issue_group        <= '0;
@@ -604,7 +604,7 @@ module ds_conv2_engine #(
             $error("ds_conv2_engine currently requires K_H=2");
         if ((OUT_CH % LANES) != 0)
             $error("OUT_CH must be divisible by LANES");
-        if (OUT_GROUPS >= K_W)
+        if ((IN_CH > 1) && (OUT_GROUPS >= K_W))
             $error("Fused PW scheduler requires OUT_GROUPS < K_W");
     end
 `endif

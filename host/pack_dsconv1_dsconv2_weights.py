@@ -64,7 +64,7 @@ def pack_pointwise(name: str, in_ch: int, out_ch: int, lanes: int) -> None:
 
 def main() -> None:
     pack_depthwise("conv1", 1)
-    pack_pointwise("conv1", 1, 21, 7)
+    pack_pointwise("conv1", 1, 21, 3)
     pack_depthwise("conv2", 21)
     pack_pointwise("conv2", 21, 20, 5)
 

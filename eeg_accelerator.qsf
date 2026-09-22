@@ -147,7 +147,7 @@ set_location_assignment PIN_AC18 -to UART_TXD
 
 
 
-set_global_assignment -name POWER_USE_INPUT_FILES OFF
+set_global_assignment -name POWER_USE_INPUT_FILES ON
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/streaming_maxpool.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/board/fpga_uart_top.sv

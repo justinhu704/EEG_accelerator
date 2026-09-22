@@ -6,8 +6,8 @@ module cnn_gru_top #(
     parameter INPUT_ODD_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_odd.mem",
     parameter CONV1_DW_W_FILE = "mem/dsconv1_dsconv2/weights/conv1_depthwise_W_kh2.mem",
     parameter CONV1_DW_B_FILE = "mem/dsconv1_dsconv2/weights/conv1_depthwise_b.mem",
-    parameter CONV1_PW_W_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_W_x7.mem",
-    parameter CONV1_PW_B_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_b_x7.mem",
+    parameter CONV1_PW_W_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_W_x3.mem",
+    parameter CONV1_PW_B_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_b_x3.mem",
     parameter BN1_A_FILE = "mem/dsconv1_dsconv2/weights/bn1_A.mem",
     parameter BN1_B_FILE = "mem/dsconv1_dsconv2/weights/bn1_B.mem",
     parameter CONV2_DW_W_FILE = "mem/dsconv1_dsconv2/weights/conv2_depthwise_W_kh2.mem",
@@ -183,7 +183,7 @@ module cnn_gru_top #(
 
     ds_conv2_bn_relu_block #(
         .IN_H(21), .IN_W(5), .IN_CH(1),
-        .K_H(2), .K_W(5), .OUT_CH(21), .LANES(7),
+        .K_H(2), .K_W(5), .OUT_CH(21), .LANES(3),
         .DW_BIAS_SHIFT(12), .DW_OUTPUT_SHIFT(14),
         .PW_BIAS_SHIFT(13), .PW_OUTPUT_SHIFT(13),
         .BN_BIAS_SHIFT(13), .BN_OUTPUT_SHIFT(13),

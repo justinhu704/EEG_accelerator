@@ -1,54 +1,149 @@
 # FPGA EEG CNN-GRU Accelerator
 
-This repository is an undergraduate project on running an EEG
-classification model on an FPGA. The model contains three CNN stages, a GRU,
-two fully connected layers, and a final argmax operation. The inference path is
-written in SystemVerilog and uses fixed-point arithmetic so that it can run on a
-DE1-SoC board.
+This project implements a fixed-point EEG classifier on the Terasic DE1-SoC.
+The complete path includes two depthwise-separable convolution stages, one
+standard convolution stage, two streaming max-pooling stages, a GRU, two fully
+connected layers, and a final argmax. A PC sends one EEG sample through UART,
+and the FPGA returns the predicted class and winning logit.
 
-The current design accepts one EEG sample from a PC through UART, performs the
-complete CNN-GRU inference, and sends the predicted class and winning logit back
-to the PC. MATLAB and Python scripts are included for exporting the test data,
-packing weights, sending samples, and recording the FPGA results.
+The RTL is written in SystemVerilog. MATLAB is used to export the quantized
+model and test data, while the Python tools prepare memory files and communicate
+with the board.
 
-## System Overview
+## Current Architecture
 
 ```text
-MATLAB/Python host
-       |
-       | UART request: sample ID + 3360 Q12 input values + CRC
-       v
-DE1-SoC FPGA
-       |
-       +-- Conv1 (3 lanes) -> BN -> ReLU -> 8-bit even/odd feature RAM
-       +-- DS-Conv2 (5 pointwise lanes) -> BN -> ReLU -> streaming MaxPool1
-       +-- Conv3 (3 lanes) -> BN -> ReLU -> streaming MaxPool2
-       +-- pipelined GRU -> pipelined FC1 -> ReLU -> BN
-       +-- streaming output FC -> Argmax
-       |
-       v
-UART response: predicted class + winning logit + CRC
+PC / Python
+    |
+    | UART request: sample_id + 3360 signed Q12 values + CRC-16
+    v
+fpga_uart_top
+    |
+    +-- UART receiver and packet loader
+    |
+    +-- DSConv1: DW 2x5 + PW 1->21 (3 PW lanes) + BN + ReLU
+    |      output: 20 x 156 x 21
+    |      |
+    |      `-- six-column even/odd rolling buffer
+    |
+    +-- DSConv2: DW 2x5 + PW 21->20 (5 PW lanes) + BN + ReLU
+    |      output: 19 x 152 x 20
+    |      `-- double result bank overlaps computation and serialization
+    |
+    +-- Streaming MaxPool1: width 10, stride 8
+    |      output: 19 x 18 x 20
+    |
+    +-- Conv3: 2x5, 20->15 (3 MAC lanes) + BN + ReLU
+    |      output: 18 x 14 x 15
+    |
+    +-- Streaming MaxPool2: width 10, stride 8
+    |      output: 18 x 1 x 15
+    |
+    +-- Pipelined GRU: 15 inputs, 9 hidden units, 18 time steps
+    |
+    +-- FC1: 162->40 + ReLU + BN
+    |
+    +-- Streaming FC output: 40->105
+    |
+    `-- Argmax
+           |
+           v
+       UART response: sample_id + status + class + winning logit + CRC-16
 ```
 
-The input shape is `21 x 160`, stored as 3360 signed 16-bit Q12 values. The
-classifier produces 105 output classes. On the board, the class index is also
-mapped back to its subject ID and shown on the seven-segment displays.
+The input tensor contains 21 EEG channels and 160 time samples. It is stored as
+3360 signed 16-bit Q12 values. The classifier has 105 output classes. On the
+board, the compact class index is mapped back to the original subject ID and
+shown on the seven-segment displays.
+
+## Pipeline and Memory Organization
+
+DSConv1 and DSConv2 run with a producer-consumer schedule. DSConv1 writes each
+completed column into a six-column rolling buffer while DSConv2 reads the
+previous five-column window. The buffer is divided into even and odd height
+banks, allowing both rows of the 2x5 depthwise kernel to be read in the same
+cycle.
+
+Inside each depthwise-separable engine, depthwise results are sent directly to
+the pointwise stage. Two result banks are used at the output: one bank is
+serialized while the other receives the next spatial result. This removes the
+previous wait between computation and channel-by-channel output.
+
+Pool1 starts as soon as DSConv2 begins producing valid data. Conv3 starts after
+the first five Pool1 columns are ready and stalls only when the next required
+column has not arrived. Pool2 consumes Conv3 output as a stream.
+
+The main memories are:
+
+- `input_banked_ram`: even/odd banks for the original EEG input.
+- `dsconv12_window_buffer`: six-column even/odd rolling buffer between DSConv1
+  and DSConv2.
+- Pool1 internal even/odd max buffers in `dsconv_streaming_pool`.
+- Shared activation RAM for UART input, Pool1 output, GRU output, and FC1 input
+  at different phases of inference.
+- `pool2_gru_ram`: small buffer between Pool2 and the GRU.
+- M10K-based weight, bias, and activation memories where supported by Quartus.
+
+## Current RTL Result
+
+The latest complete ModelSim regression uses the 10 ns period from
+`quartus/eeg_accelerator.sdc`.
+
+| Measurement | Current result |
+|---|---:|
+| Clock used for cycle-to-time conversion | 100 MHz |
+| Complete inference | 556,030 cycles |
+| Calculated inference time | 5.5603 ms |
+| Main model operations | 5,389,008 operations |
+| Effective throughput | 0.969 GOPS |
+| Produced logits | 105 |
+| Regression prediction | Class 0 |
+| Maximum checked layer difference | 2 LSB |
+
+The operation count treats one multiply-accumulate as two operations. Pooling,
+address generation, activation functions, and saturation are not included in
+the GOPS count.
+
+Reducing DSConv1 from seven pointwise lanes to three increased the complete
+inference by only 20 cycles because DSConv1 remains hidden behind the slower
+DSConv2 stage. The RTL regression still produces the same class and winning
+logit.
+
+The latest 105-subject UART demonstration produced 101 correct predictions out
+of 105, or 96.19%. This number describes the one-sample-per-subject demo set; it
+is not a replacement for complete test-set accuracy.
+
+The current source changes have not yet been through a new Quartus Full
+Compilation. Updated Fmax, ALM, register, M10K, DSP, and Power Analyzer results
+must therefore be taken from the next build rather than from older reports.
+
+## Clock and UART
+
+The DE1-SoC board provides a physical 50 MHz `CLOCK_50` input. The current
+`fpga_uart_top` uses this clock directly and sets `UART_CLKS_PER_BIT=54` for
+921600 baud. The SDC currently contains a 10 ns timing target for 100 MHz timing
+analysis and cycle reporting, but changing the SDC does not change the physical
+board clock. A PLL or another real 100 MHz clock source is required before the
+board itself can run at 100 MHz; the UART divider must also be updated for that
+clock.
+
+UART format: 921600 baud, 8 data bits, no parity, 1 stop bit. Multibyte fields
+are little-endian. The complete packet definition is in
+[`docs/uart_protocol.md`](docs/uart_protocol.md).
 
 ## Hardware and Tools
 
-| Item | Setting used in this project |
+| Item | Setting |
 |---|---|
 | FPGA board | Terasic DE1-SoC |
 | FPGA device | Cyclone V `5CSEMA5F31C6` |
-| Board clock | 50 MHz `CLOCK_50` input |
-| Current timing target | 100 MHz (10 ns constraint) |
 | Quartus project | Quartus Prime Lite 25.1 |
-| RTL language | SystemVerilog |
+| RTL | SystemVerilog |
 | Simulation | Questa Altera FPGA / ModelSim |
-| Host environment | MATLAB and Python 3 |
-| UART setting | 921600 baud, 8 data bits, no parity, 1 stop bit |
+| Host tools | MATLAB and Python 3 |
+| UART | 921600 baud, 8N1 |
 
-The Python UART scripts only require `pyserial`. Install it with:
+Install the Python dependency with:
 
 ```powershell
 python -m pip install -r host\requirements.txt
@@ -58,108 +153,112 @@ python -m pip install -r host\requirements.txt
 
 ```text
 EEG_Project/
-|-- rtl/        SystemVerilog modules for CNN, GRU, memory, UART, and board I/O
-|-- tb/         Unit and full-pipeline testbenches
-|-- host/       MATLAB/Python dataset export and UART tools
-|-- mem/        Fixed-point weights, lookup tables, and board test samples
-|-- quartus/    Quartus settings, timing constraints, and simulation scripts
-|-- scripts/    Utilities for generating RTL support data
-|-- docs/       UART packet format and implementation notes
+|-- rtl/        synthesizable RTL for the accelerator, memories, UART, and I/O
+|-- tb/         unit and integration testbenches
+|-- host/       MATLAB export, weight packing, UART, and benchmark tools
+|-- mem/        generated fixed-point data, weights, LUTs, and golden results
+|-- quartus/    SDC and ModelSim/PowerPlay scripts
+|-- docs/       UART protocol and implementation notes
+|-- scripts/    supporting generation utilities
 |-- eeg_accelerator.qpf
 |-- eeg_accelerator.qsf
 `-- README.md
 ```
 
-The Quartus top-level entity is `fpga_uart_top`, implemented in
-`rtl/board/fpga_uart_top.sv`. Some older or alternative RTL modules are kept for
-comparison and separate simulation.
+The Quartus top-level entity is `fpga_uart_top`. The QSF also contains older and
+alternative modules used for comparison, but they are not all instantiated by
+the current top-level design.
 
-## Running a Simulation
+Generated model data under `mem/` is intentionally excluded from Git. The
+required MATLAB exports and packed memory files must exist locally before
+simulation or compilation.
 
-1. Open ModelSim or QuestaSim and change the working directory to `quartus/`.
-2. Run one of the `.do` files from the Transcript window.
+## Preparing Packed Weights
 
-For example, the following script compiles and runs the UART top-level
-testbench:
+The DSConv packing script generates the two-row depthwise words, three-lane
+DSConv1 pointwise words, five-lane DSConv2 pointwise words, banked input sample,
+and sample-0 golden files:
 
-```tcl
-do run_fpga_uart_top.do
+```powershell
+python host\pack_dsconv1_dsconv2_weights.py
 ```
 
-Other useful scripts include:
+Conv3 uses a separate three-lane packing script. The complete cycle-count script
+runs both packing steps automatically.
 
-- `run_eeg_top.do` for the complete inference path
-- `run_eeg_cycle_count.do` for RTL cycle counting
-- `run_gru_pipeline.do` for the GRU pipeline
-- `run_uart_unit.do` for the UART modules
+## Running Simulation
 
-The scripts for the parallel convolution designs first regenerate their packed
-weight files with `host/pack_parallel_conv_weights.py` and then compile the RTL
-and testbench files.
+Start ModelSim or QuestaSim in the `quartus` directory. For the complete
+functional and cycle regression:
+
+```tcl
+do run_eeg_cycle_count.do
+```
+
+The test checks the final class, all 105 logits, selected intermediate tensors,
+and the total cycle count.
+
+Other useful scripts:
+
+- `run_ds_conv2_engine.do`: depthwise/pointwise pipeline and result-bank wave.
+- `run_streaming_maxpool1.do`: first streaming pool.
+- `run_streaming_maxpool2.do`: second streaming pool.
+- `run_gru_pipeline.do`: pipelined GRU.
+- `run_fpga_uart_top.do`: complete UART top-level test.
+- `run_uart_unit.do`: UART receiver, transmitter, and packet logic.
+- `run_eeg_power_vcd_25mhz.do`, `run_eeg_power_vcd_50mhz.do`, and
+  `run_eeg_power_vcd_100mhz.do`: VCD generation for Power Analyzer.
+
+From PowerShell, the complete regression can also be started with:
+
+```powershell
+cd quartus
+vsim -c -do run_eeg_cycle_count.do
+```
 
 ## Compiling for the DE1-SoC
 
-1. Open `eeg_accelerator.qpf` in Quartus Prime.
-2. Check that `fpga_uart_top` is selected as the top-level entity.
-3. Start compilation from **Processing > Start Compilation**.
-4. Program the generated `.sof` file to the DE1-SoC.
+1. Generate the required `.mem` files.
+2. Open `eeg_accelerator.qpf` in Quartus Prime.
+3. Confirm that `fpga_uart_top` is the top-level entity.
+4. Run **Processing > Start Compilation**.
+5. Review Fitter resource usage and the slow-corner setup timing report.
+6. Program the generated `.sof` file onto the DE1-SoC.
 
-The device selection and board pin assignments are stored in
-`eeg_accelerator.qsf`. Model weight and lookup-table `.mem` files must be in the
-paths referenced by the RTL before compilation.
+Run a new Full Compilation whenever lane counts, packed ROM widths, memory
+organization, or pipeline structure changes. ModelSim verifies functionality
+and cycle count, but it cannot determine final DSP use or Fmax.
 
-## Sending a Test Sample through UART
+## UART Dataset Test
 
-The MATLAB export script creates:
+The MATLAB exporter creates:
 
 - `host/data/test_inputs_q12.bin`
 - `host/data/test_labels.csv`
 
-Before connecting the board, the files and packet format can be checked without
-opening a COM port:
+Validate the files and packet construction without opening a COM port:
 
 ```powershell
 python host\send_eeg_uart.py --dry-run
 ```
 
-To send samples to the FPGA, replace `COM10` with the port shown in Windows
-Device Manager:
+Send the test set to the board:
 
 ```powershell
 python host\send_eeg_uart.py --port COM10 --baud 921600
 ```
 
-The current hardware uses one shared 16-bit activation RAM and an 8-bit banked
-feature RAM. The banked RAM separates even and odd height rows so Conv2 can read
-two adjacent rows at the same time. It is reused for the Pool2 output after the
-Conv1 feature map is no longer needed. The host sends one sample and waits for
-its response before sending the next sample. The complete request and response
-packet fields are documented in `docs/uart_protocol.md`.
+Prepare and run the one-sample-per-subject demonstration:
 
-## Current Project Status
+```powershell
+python host\demo_105_subjects_uart.py --prepare-only --rebuild-dataset
+python host\demo_105_subjects_uart.py --port COM10 --baud 921600
+```
 
-The current inference path uses a depthwise separable Conv2, streaming pooling,
-even/odd feature-memory banks, and pipelined GRU and fully connected stages.
-Conv1 and Conv3 use three MAC lanes, while the pointwise stage of DS-Conv2 uses
-five lanes. The DS-Conv2 stage reduced its measured RTL cycle count from 823,086
-to 392,774 cycles.
-
-The full RTL inference takes 1,018,709 cycles. This corresponds to about
-20.374 ms with the board's 50 MHz input clock, or 10.187 ms at 100 MHz. The
-current Quartus build meets the 100 MHz timing constraint with a reported Fmax
-of 108.92 MHz in the slow 1100 mV, 85 C corner. The design still requires a PLL
-or another 100 MHz clock source to run at 100 MHz on the board; changing the SDC
-constraint alone does not change the physical input clock.
-
-Current resource usage is 4,450 ALMs, 6,179 registers, 127 M10K blocks, and 34
-DSP blocks. The latest full UART dataset run classified 115,211 of 119,075
-samples correctly, giving 96.75% accuracy.
-
-PowerPlay currently estimates 622.79 mW total thermal power and 176.16 mW core
-dynamic power for the 100 MHz build. The report has low estimation confidence
-because the available VCD does not cover enough internal switching activity, so
-these power values should only be treated as preliminary estimates.
+Replace `COM10` with the port shown in Windows Device Manager. The host waits
+for the FPGA response before sending the next sample because activation memory
+is reused during inference.
 
 ## License
 
-This project currently has no license file.
+This repository currently has no license file.
