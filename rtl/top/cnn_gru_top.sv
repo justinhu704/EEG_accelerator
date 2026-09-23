@@ -31,8 +31,7 @@ module cnn_gru_top #(
     parameter GRU_BR_FILE = "mem/dsconv1_dsconv2/weights/gru_br.mem",
     parameter GRU_BZ_FILE = "mem/dsconv1_dsconv2/weights/gru_bz.mem",
     parameter GRU_BH_FILE = "mem/dsconv1_dsconv2/weights/gru_bh.mem",
-    parameter SIGMOID_FILE = "mem/lut/sigmoid_half_lut_q15.mem",
-    parameter TANH_FILE = "mem/lut/tanh_half_lut_q15.mem"
+    parameter ACTIVATION_LUT_FILE = "mem/lut/gru_activation_lut_q15.mem"
 ) (
     input logic clk, input logic rst_n, input logic start,
     output logic busy, output logic done,
@@ -311,7 +310,7 @@ module cnn_gru_top #(
         .WR_FILE(GRU_WR_FILE), .WZ_FILE(GRU_WZ_FILE), .WH_FILE(GRU_WH_FILE),
         .UR_FILE(GRU_UR_FILE), .UZ_FILE(GRU_UZ_FILE), .UH_FILE(GRU_UH_FILE),
         .BR_FILE(GRU_BR_FILE), .BZ_FILE(GRU_BZ_FILE), .BH_FILE(GRU_BH_FILE),
-        .SIGMOID_FILE(SIGMOID_FILE), .TANH_FILE(TANH_FILE)
+        .ACTIVATION_LUT_FILE(ACTIVATION_LUT_FILE)
     ) u_gru (
         .clk(clk), .rst_n(rst_n), .start(gru_start),
         .busy(gru_busy), .done(gru_done),

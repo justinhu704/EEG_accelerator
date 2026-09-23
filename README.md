@@ -113,8 +113,9 @@ The latest 105-subject UART demonstration produced 101 correct predictions out
 of 105, or 96.19%. This number describes the one-sample-per-subject demo set; it
 is not a replacement for complete test-set accuracy.
 
-The latest Quartus Full Compilation for the Cyclone V `5CSEMA5F31C6` completed
-without errors. The post-fit results are:
+The most recent Quartus Full Compilation for the Cyclone V `5CSEMA5F31C6`
+completed without errors. It was run after the phase-1 GRU multiplier sharing
+and before the unified GRU activation LUT. Its post-fit results are:
 
 | Post-fit measurement | Current result |
 |---|---:|
@@ -129,6 +130,13 @@ without errors. The post-fit results are:
 
 Power Analyzer was not enabled in this compilation, so power must be measured
 separately with the activity-based power flow before reporting a new value.
+
+The current RTL additionally packs the reset/update sigmoid and candidate tanh
+tables into one dual-read 256 x 32-bit ROM. An exhaustive ModelSim comparison
+over all signed 16-bit inputs, the 162-output GRU regression, and the complete
+EEG inference regression are bit-exact. Updated DSP, M10K, ALM, and Fmax values
+for this LUT change require the next Quartus Full Compilation and are therefore
+not claimed by the table above.
 
 ## Clock and UART
 

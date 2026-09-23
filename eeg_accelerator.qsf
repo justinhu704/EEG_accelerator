@@ -182,6 +182,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/maxpool_layer_mem.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/pooling/dsconv_streaming_pool.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/sigmoid_lut.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/tanh_lut.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_activation_lut.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gru/gru_engine_pipeline.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/fc/fc_engine.sv
@@ -206,5 +207,6 @@ set_global_assignment -name POWER_DEFAULT_INPUT_IO_TOGGLE_RATE "12.5 %"
 
 set_global_assignment -name POWER_INPUT_FILE_NAME power/eeg_active_100mhz.vcd -section_id eeg_active_100mhz.vcd
 set_instance_assignment -name POWER_READ_INPUT_FILE eeg_active_100mhz.vcd -to "fpga_uart_top|eeg_top:u_eeg_top"
+
 
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

@@ -26,6 +26,9 @@ work/
 
 # MATLAB-exported simulation data and reference documents
 mem/*
+!mem/lut/
+mem/lut/*
+!mem/lut/gru_activation_lut_q15.mem
 !mem/board/
 !mem/board/sample0_q12.mem
 !mem/board/sample105_q12.mem

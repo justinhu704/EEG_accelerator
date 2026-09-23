@@ -45,6 +45,7 @@ vlog -sv ../rtl/pooling/dsconv_streaming_pool.sv
 # GRU / FC / top / testbench
 vlog -sv ../rtl/gru/sigmoid_lut.sv
 vlog -sv ../rtl/gru/tanh_lut.sv
+vlog -sv ../rtl/gru/gru_activation_lut.sv
 vlog -sv ../rtl/gru/gru_engine.sv
 vlog -sv ../rtl/gru/gru_engine_pipeline.sv
 vlog -sv ../rtl/fc/fc_engine.sv

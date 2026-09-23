@@ -31,8 +31,7 @@ module fpga_top #(
     parameter GRU_BR_FILE   = "mem/dsconv1_dsconv2/weights/gru_br.mem",
     parameter GRU_BZ_FILE   = "mem/dsconv1_dsconv2/weights/gru_bz.mem",
     parameter GRU_BH_FILE   = "mem/dsconv1_dsconv2/weights/gru_bh.mem",
-    parameter SIGMOID_FILE  = "mem/lut/sigmoid_half_lut_q15.mem",
-    parameter TANH_FILE     = "mem/lut/tanh_half_lut_q15.mem",
+    parameter ACTIVATION_LUT_FILE = "mem/lut/gru_activation_lut_q15.mem",
     parameter FC1_W_FILE    = "mem/dsconv1_dsconv2/weights/fc_1_W.mem",
     parameter FC1_B_FILE    = "mem/dsconv1_dsconv2/weights/fc_1_b.mem",
     parameter FC_BN_A_FILE  = "mem/dsconv1_dsconv2/weights/bn_2_A.mem",
@@ -132,7 +131,7 @@ module fpga_top #(
         .GRU_UZ_FILE(GRU_UZ_FILE), .GRU_UH_FILE(GRU_UH_FILE),
         .GRU_BR_FILE(GRU_BR_FILE), .GRU_BZ_FILE(GRU_BZ_FILE),
         .GRU_BH_FILE(GRU_BH_FILE),
-        .SIGMOID_FILE(SIGMOID_FILE), .TANH_FILE(TANH_FILE),
+        .ACTIVATION_LUT_FILE(ACTIVATION_LUT_FILE),
         .FC1_W_FILE(FC1_W_FILE), .FC1_B_FILE(FC1_B_FILE),
         .FC_BN_A_FILE(FC_BN_A_FILE), .FC_BN_B_FILE(FC_BN_B_FILE),
         .FC_OUT_W_FILE(FC_OUT_W_FILE), .FC_OUT_B_FILE(FC_OUT_B_FILE)

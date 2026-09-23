@@ -53,8 +53,7 @@ module tb_gru_pipeline;
         .BR_FILE("../mem/dsconv1_dsconv2/weights/gru_br.mem"),
         .BZ_FILE("../mem/dsconv1_dsconv2/weights/gru_bz.mem"),
         .BH_FILE("../mem/dsconv1_dsconv2/weights/gru_bh.mem"),
-        .SIGMOID_FILE("../mem/lut/sigmoid_half_lut_q15.mem"),
-        .TANH_FILE("../mem/lut/tanh_half_lut_q15.mem")
+        .ACTIVATION_LUT_FILE("../mem/lut/gru_activation_lut_q15.mem")
     ) dut (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(done),

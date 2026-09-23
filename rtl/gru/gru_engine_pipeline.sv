@@ -30,8 +30,7 @@ module gru_engine_pipeline #(
     parameter BR_FILE = "mem/weights/gru_br.mem",
     parameter BZ_FILE = "mem/weights/gru_bz.mem",
     parameter BH_FILE = "mem/weights/gru_bh.mem",
-    parameter SIGMOID_FILE = "mem/lut/sigmoid_half_lut_q15.mem",
-    parameter TANH_FILE    = "mem/lut/tanh_half_lut_q15.mem"
+    parameter ACTIVATION_LUT_FILE = "mem/lut/gru_activation_lut_q15.mem"
 ) (
     input  logic               clk,
     input  logic               rst_n,
@@ -189,8 +188,7 @@ module gru_engine_pipeline #(
     logic sigmoid_in_valid;
     logic signed [15:0] reset_lut_input;
     logic signed [15:0] update_lut_input;
-    logic reset_lut_valid;
-    logic update_lut_valid;
+    logic gate_lut_valid;
     logic signed [15:0] reset_lut_output;
     logic signed [15:0] update_lut_output;
 
@@ -203,6 +201,8 @@ module gru_engine_pipeline #(
     logic tanh_out_valid;
     logic signed [15:0] tanh_output;
     logic [HIDDEN_INDEX_W-1:0] tanh_neuron_d1;
+    logic [HIDDEN_INDEX_W-1:0] tanh_neuron_d2;
+    logic [HIDDEN_INDEX_W-1:0] tanh_neuron_d3;
 
     // Hidden mix uses one time-multiplexed multiplier:
     // (1-z)*candidate, then z*h_previous, then add and write.
@@ -244,22 +244,18 @@ module gru_engine_pipeline #(
     end
 
     // 對應 sigmoid 數值
-    sigmoid_lut #(.MEM_FILE(SIGMOID_FILE)) u_reset_sigmoid (
+    gru_activation_lut #(.MEM_FILE(ACTIVATION_LUT_FILE)) u_activation_lut (
         .clk(clk), .rst_n(rst_n),
-        .in_valid(sigmoid_in_valid), .in_data(reset_lut_input),
-        .out_valid(reset_lut_valid), .out_data(reset_lut_output)
-    );
-
-    sigmoid_lut #(.MEM_FILE(SIGMOID_FILE)) u_update_sigmoid (
-        .clk(clk), .rst_n(rst_n),
-        .in_valid(sigmoid_in_valid), .in_data(update_lut_input),
-        .out_valid(update_lut_valid), .out_data(update_lut_output)
-    );
-
-    tanh_lut #(.MEM_FILE(TANH_FILE)) u_candidate_tanh (
-        .clk(clk), .rst_n(rst_n),
-        .in_valid(tanh_in_valid), .in_data(candidate_lut_input),
-        .out_valid(tanh_out_valid), .out_data(tanh_output)
+        .gate_in_valid(sigmoid_in_valid),
+        .reset_in_data(reset_lut_input),
+        .update_in_data(update_lut_input),
+        .gate_out_valid(gate_lut_valid),
+        .reset_out_data(reset_lut_output),
+        .update_out_data(update_lut_output),
+        .candidate_in_valid(tanh_in_valid),
+        .candidate_in_data(candidate_lut_input),
+        .candidate_out_valid(tanh_out_valid),
+        .candidate_out_data(tanh_output)
     );
 
     always_comb begin
@@ -347,6 +343,8 @@ module gru_engine_pipeline #(
             activation_lut_input <= '0;
             activation_lut_neuron <= '0;
             tanh_neuron_d1 <= '0;
+            tanh_neuron_d2 <= '0;
+            tanh_neuron_d3 <= '0;
             hm_neuron <= '0;
             hm_product_s1 <= '0;
             hm_candidate_product <= '0;
@@ -434,8 +432,10 @@ module gru_engine_pipeline #(
             // 記錄 tanh 計算的目標神經元
             if (tanh_in_valid)
                 tanh_neuron_d1 <= activation_lut_neuron;
+            tanh_neuron_d2 <= tanh_neuron_d1;
+            tanh_neuron_d3 <= tanh_neuron_d2;
             if (tanh_out_valid)
-                candidate_state[tanh_neuron_d1] <= tanh_output;
+                candidate_state[tanh_neuron_d3] <= tanh_output;
 
             // The one physical hidden-mix multiplier is driven by hm_mul_a/b.
             if (hm_mul_en)
@@ -573,7 +573,7 @@ module gru_engine_pipeline #(
 
                 // 儲存sigmoid 計算結果，並迴圈九次
                 S_GATE_WAIT: begin
-                    if (reset_lut_valid && update_lut_valid) begin
+                    if (gate_lut_valid) begin
                         reset_gate[gate_neuron] <= reset_lut_output;
                         update_gate[gate_neuron] <= update_lut_output;
                         if (gate_neuron == HIDDEN_SIZE-1) begin
@@ -711,7 +711,7 @@ module gru_engine_pipeline #(
                 // Wait until all nine tanh results have been stored.
                 S_ACT_DRAIN: begin
                     if (tanh_out_valid &&
-                        (tanh_neuron_d1 == HIDDEN_SIZE-1)) begin
+                        (tanh_neuron_d3 == HIDDEN_SIZE-1)) begin
                         hm_neuron <= '0;
                         state <= S_HM_CAND_MUL;
                     end
