@@ -9,6 +9,7 @@ module tb_eeg_cycle_count;
     localparam int MAX_CYCLES = 20_100_000;
     localparam int EXPECTED_LOGITS = 105;
     localparam int EXPECTED_CLASS = 0;
+    localparam int EXPECTED_WINNING_LOGIT = 22397;
     localparam int MAX_STAGE_DIFF = 2;
     localparam int CONV1_VALUES = 20 * 156 * 21;
     localparam int CONV2_VALUES = 19 * 152 * 20;
@@ -252,8 +253,12 @@ module tb_eeg_cycle_count;
                     $display("FAIL: expected class %0d, received %0d.",
                              EXPECTED_CLASS, class_index);
                     $fatal(1);
+                end else if ($signed(winning_logit) != EXPECTED_WINNING_LOGIT) begin
+                    $display("FAIL: expected winning logit %0d, received %0d.",
+                             EXPECTED_WINNING_LOGIT, $signed(winning_logit));
+                    $fatal(1);
                 end else begin
-                    $display("PASS: DS-Conv1/2 inference, class, and cycle count are valid.");
+                    $display("PASS: inference class, winning logit, and cycle count are valid.");
                 end
             end
 
