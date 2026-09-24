@@ -114,7 +114,7 @@ def validate_dataset(inputs_path: Path, labels: list[dict[str, int]]) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="serial port, for example COM5")
-    parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--baud", type=int, default=921600)
     parser.add_argument(
         "--inputs", type=Path, default=Path("host/data/test_inputs_q12.bin")
     )
@@ -199,7 +199,6 @@ def main() -> int:
             payload = input_file.read(BYTES_PER_SAMPLE)
             packet = build_request(index, payload)
             uart.write(packet)
-            uart.flush()
 
             response_id, status, prediction, winning_logit = read_response(uart)
             if response_id != index:

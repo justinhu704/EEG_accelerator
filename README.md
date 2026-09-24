@@ -86,14 +86,14 @@ The main memories are:
 
 ## Current RTL Result
 
-The latest complete ModelSim regression uses the 10 ns period from
-`quartus/eeg_accelerator.sdc`.
+The latest complete ModelSim regression uses the 10 ns PLL core-clock period
+defined in `quartus/eeg_accelerator.sdc`.
 
 | Measurement | Current result |
 |---|---:|
 | Clock used for cycle-to-time conversion | 100 MHz |
-| Complete inference | 556,624 cycles |
-| Calculated inference time | 5.56624 ms |
+| Complete inference | 556,984 cycles |
+| Calculated inference time | 5.56984 ms |
 | Main model operations | 5,389,008 operations |
 | Effective throughput | 0.968 GOPS |
 | Produced logits | 105 |
@@ -114,8 +114,9 @@ of 105, or 96.19%. This number describes the one-sample-per-subject demo set; it
 is not a replacement for complete test-set accuracy.
 
 The most recent Quartus Full Compilation for the Cyclone V `5CSEMA5F31C6`
-completed without errors. It was run after the phase-1 GRU multiplier sharing
-and before the unified GRU activation LUT. Its post-fit results are:
+completed without errors. It was run after the phase-1 GRU multiplier sharing,
+but before the unified GRU activation LUT and current PLL integration. Its
+post-fit results are:
 
 | Post-fit measurement | Current result |
 |---|---:|
@@ -141,12 +142,11 @@ not claimed by the table above.
 ## Clock and UART
 
 The DE1-SoC board provides a physical 50 MHz `CLOCK_50` input. The current
-`fpga_uart_top` uses this clock directly and sets `UART_CLKS_PER_BIT=54` for
-921600 baud. The SDC currently contains a 10 ns timing target for 100 MHz timing
-analysis and cycle reporting, but changing the SDC does not change the physical
-board clock. A PLL or another real 100 MHz clock source is required before the
-board itself can run at 100 MHz; the UART divider must also be updated for that
-clock.
+`fpga_uart_top` uses `pll_50_to_100` to generate a 100 MHz core clock and holds
+the design in reset until the PLL locks. The UART and complete inference path
+run from this generated clock. `UART_CLKS_PER_BIT=109` keeps the external UART
+rate at 921600 baud. The SDC constrains the external oscillator to 20 ns and
+derives the PLL-generated 10 ns clock automatically.
 
 UART format: 921600 baud, 8 data bits, no parity, 1 stop bit. Multibyte fields
 are little-endian. The complete packet definition is in

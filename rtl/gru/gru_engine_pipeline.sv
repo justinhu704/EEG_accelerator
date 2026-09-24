@@ -59,8 +59,8 @@ module gru_engine_pipeline #(
                                     ? 1 : $clog2(RECURRENT_WEIGHT_DEPTH);
 
     // Q formats from the verified MATLAB export:
-    // DS-Conv2 模型：x=F12，h/r/z/candidate=F15，Wr/Wz/Ur=F14，
-    // Wh/Uz/Uh=F15，biases=F15，LUT input=F9。
+    // DS-Conv2 模型：x=F12，h/r/z/candidate=F15，Wr/Ur/Wh/Uh=F15，
+    // Wz/Uz=F14，biases=F15，LUT input=F9。
     // These values come from EEG_CNN_GRU_quantized.mat; the older
     // fixed_point_pkg table does not describe the current exported files.
     localparam int GATE_ACC_F = 30;
@@ -389,15 +389,17 @@ module gru_engine_pipeline #(
             // 乘法結果已經過暫存，這一級只保留64-bit累加器加法。
             if (gate_valid_s2) begin
                 if (!gate_recurrent_s2) begin
+                    // x(Q12) * Wr(Q15) 為 Q27，左移 3 位對齊 Q30。
                     reset_accumulator <= reset_accumulator
-                                       + ($signed(gate_reset_product_s2) <<< 4);
+                                       + ($signed(gate_reset_product_s2) <<< 3);
                     update_accumulator <= update_accumulator
                                         + ($signed(gate_update_product_s2) <<< 4);
                 end else begin
+                    // h(Q15) * Ur(Q15) 已是 Q30；h(Q15) * Uz(Q14) 需左移 1 位。
                     reset_accumulator <= reset_accumulator
-                                       + ($signed(gate_reset_product_s2) <<< 1);
+                                       + $signed(gate_reset_product_s2);
                     update_accumulator <= update_accumulator
-                                        + $signed(gate_update_product_s2);
+                                        + ($signed(gate_update_product_s2) <<< 1);
                 end
             end
 

@@ -141,7 +141,8 @@ module eeg_top #(
 
     fc_engine #(
         .INPUT_SIZE(162), .OUTPUT_SIZE(40),
-        .BIAS_SHIFT(16), .OUTPUT_SHIFT(18),
+        // flatten(Q15) * weight(Q15) 為 Q30，右移 17 位得到 FC1 的 Q13。
+        .BIAS_SHIFT(16), .OUTPUT_SHIFT(17),
         .WEIGHT_FILE(FC1_W_FILE), .BIAS_FILE(FC1_B_FILE)
     ) u_fc1 (
         .clk(clk), .rst_n(rst_n), .start(fc1_start),

@@ -2,8 +2,12 @@
 // UART receives one complete sample, writes existing RAM A, runs inference,
 // and returns the class. No third activation/input RAM is instantiated.
 module fpga_uart_top #(
-    // 921600 baud rate
-    parameter integer UART_CLKS_PER_BIT = 54,
+    // 100 MHz / 921600 baud = 108.5 clocks，取 109。
+    parameter integer UART_CLKS_PER_BIT = 109,
+    // 板端使用 PLL；testbench 可設為 0，直接使用輸入 clock。
+    parameter bit USE_PLL = 1'b1,
+    parameter INPUT_EVEN_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_even.mem",
+    parameter INPUT_ODD_FILE  = "mem/dsconv1_dsconv2/board/sample0_q12_odd.mem",
     parameter CONV1_DW_W_FILE  = "mem/dsconv1_dsconv2/weights/conv1_depthwise_W_kh2.mem",
     parameter CONV1_DW_B_FILE  = "mem/dsconv1_dsconv2/weights/conv1_depthwise_b.mem",
     parameter CONV1_PW_W_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_W_x3.mem",
@@ -53,6 +57,9 @@ module fpga_uart_top #(
 );
     logic [1:0] reset_sync;
     logic rst_n;
+    logic core_clk_100;
+    logic pll_locked;
+    logic core_async_rst_n;
 
     logic [7:0] rx_data;
     logic rx_valid, rx_framing_error, rx_busy;
@@ -83,9 +90,28 @@ module fpga_uart_top #(
     logic [6:0] subject_id;
     logic [3:0] bcd_hundreds, bcd_tens, bcd_ones;
 
-    // KEY0 provides asynchronous assertion and synchronous release.
-    always_ff @(posedge CLOCK_50 or negedge KEY[0]) begin
-        if (!KEY[0])
+    // ---------------------------------------------------------------
+    // 50 MHz -> 100 MHz core clock
+    // ---------------------------------------------------------------
+    generate
+        if (USE_PLL) begin : gen_core_pll
+            pll_50_to_100 u_pll (
+                .refclk   (CLOCK_50),
+                .rst      (~KEY[0]),
+                .outclk_0 (core_clk_100),
+                .locked   (pll_locked)
+            );
+        end else begin : gen_core_clock_bypass
+            assign core_clk_100 = CLOCK_50;
+            assign pll_locked = 1'b1;
+        end
+    endgenerate
+
+    // KEY0 或 PLL 尚未 lock 時立即 reset；在 100 MHz clock 下同步釋放。
+    assign core_async_rst_n = KEY[0] & pll_locked;
+
+    always_ff @(posedge core_clk_100 or negedge core_async_rst_n) begin
+        if (!core_async_rst_n)
             reset_sync <= 2'b00;
         else
             reset_sync <= {reset_sync[0], 1'b1};
@@ -93,13 +119,13 @@ module fpga_uart_top #(
     assign rst_n = reset_sync[1];
 
     uart_rx #(.CLKS_PER_BIT(UART_CLKS_PER_BIT)) u_uart_rx (
-        .clk(CLOCK_50), .rst_n(rst_n), .serial_rx(UART_RXD),
+        .clk(core_clk_100), .rst_n(rst_n), .serial_rx(UART_RXD),
         .data(rx_data), .valid(rx_valid),
         .framing_error(rx_framing_error), .busy(rx_busy)
     );
 
     uart_sample_loader #(.SAMPLE_WORDS(3360), .ADDR_W(12)) u_loader (
-        .clk(CLOCK_50), .rst_n(rst_n),
+        .clk(core_clk_100), .rst_n(rst_n),
         .rx_data(rx_data), .rx_valid(rx_valid),
         .rx_framing_error(rx_framing_error),
         .input_ready(input_ready),
@@ -115,6 +141,8 @@ module fpga_uart_top #(
 
     eeg_top #(
         .INPUT_FILE(""),
+        .INPUT_EVEN_FILE(INPUT_EVEN_FILE),
+        .INPUT_ODD_FILE(INPUT_ODD_FILE),
         .CONV1_DW_W_FILE(CONV1_DW_W_FILE), .CONV1_DW_B_FILE(CONV1_DW_B_FILE),
         .CONV1_PW_W_FILE(CONV1_PW_W_FILE),
         .CONV1_PW_B_FILE(CONV1_PW_B_FILE),
@@ -138,7 +166,7 @@ module fpga_uart_top #(
         .FC_BN_A_FILE(FC_BN_A_FILE), .FC_BN_B_FILE(FC_BN_B_FILE),
         .FC_OUT_W_FILE(FC_OUT_W_FILE), .FC_OUT_B_FILE(FC_OUT_B_FILE)
     ) u_eeg_top (
-        .clk(CLOCK_50), .rst_n(rst_n), .start(inference_start),
+        .clk(core_clk_100), .rst_n(rst_n), .start(inference_start),
         .busy(core_busy), .done(core_done),
         .input_write_en(input_write_en),
         .input_write_addr(input_write_addr),
@@ -148,14 +176,16 @@ module fpga_uart_top #(
         .winning_logit(core_winning_logit),
         .logit_valid(logit_valid_unused),
         .logit_index(logit_index_unused),
-        .logit_data(logit_data_unused)
+        .logit_data(logit_data_unused),
+        .logit_read_addr(7'd0),
+        .logit_read_data(logit_read_data_unused)
     );
 
     assign response_start  = core_done || packet_error;
     assign response_status = packet_error ? 8'd1 : 8'd0;
 
     uart_result_sender u_result_sender (
-        .clk(CLOCK_50), .rst_n(rst_n), .start(response_start),
+        .clk(core_clk_100), .rst_n(rst_n), .start(response_start),
         .sample_id(sample_id), .status(response_status),
         .class_index(packet_error ? 7'd0 : core_class_index),
         .winning_logit(packet_error ? 16'sd0 : core_winning_logit),
@@ -165,12 +195,12 @@ module fpga_uart_top #(
     );
 
     uart_tx #(.CLKS_PER_BIT(UART_CLKS_PER_BIT)) u_uart_tx (
-        .clk(CLOCK_50), .rst_n(rst_n),
+        .clk(core_clk_100), .rst_n(rst_n),
         .start(tx_start), .data(tx_data),
         .serial_tx(UART_TXD), .busy(tx_busy), .done(tx_done)
     );
 
-    always_ff @(posedge CLOCK_50 or negedge rst_n) begin
+    always_ff @(posedge core_clk_100 or negedge rst_n) begin
         if (!rst_n) begin
             result_valid         <= 1'b0;
             packet_error_latched <= 1'b0;
