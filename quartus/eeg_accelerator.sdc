@@ -1,5 +1,5 @@
-# Direct-clock 100 MHz timing target. The PLL is bypassed in fpga_uart_top.
-set CORE_CLOCK_PERIOD_NS 10.000
+# Direct-clock 6 MHz power run. The PLL is bypassed in fpga_uart_top.
+set CORE_CLOCK_PERIOD_NS 166.667
 create_clock -name CLOCK_50 -period $CORE_CLOCK_PERIOD_NS [get_ports {CLOCK_50}]
 
 # KEY0/KEY1 are asynchronous board buttons. They enter explicit synchronizer

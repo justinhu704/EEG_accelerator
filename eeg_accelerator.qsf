@@ -207,8 +207,8 @@ set_global_assignment -name SIP_FILE ip/pll_50_to_100.sip
 set_global_assignment -name POWER_DEFAULT_INPUT_IO_TOGGLE_RATE "12.5 %"
 
 
-set_global_assignment -name POWER_INPUT_FILE_NAME power/eeg_active_100mhz.vcd -section_id eeg_active_100mhz.vcd
-set_instance_assignment -name POWER_READ_INPUT_FILE eeg_active_100mhz.vcd -to "fpga_uart_top|eeg_top:u_eeg_top"
+set_global_assignment -name POWER_INPUT_FILE_NAME power/eeg_active_6mhz.vcd -section_id eeg_active_6mhz.vcd
+set_instance_assignment -name POWER_READ_INPUT_FILE eeg_active_6mhz.vcd -to "fpga_uart_top|eeg_top:u_eeg_top"
 
 
 
