@@ -2,10 +2,10 @@
 // UART receives one complete sample, writes existing RAM A, runs inference,
 // and returns the class. No third activation/input RAM is instantiated.
 module fpga_uart_top #(
-    // 100 MHz / 921600 baud = 108.5 clocks，取 109。
+    // Keep the final-design UART divider unchanged during core power sweeps.
     parameter integer UART_CLKS_PER_BIT = 109,
-    // 板端使用 PLL；testbench 可設為 0，直接使用輸入 clock。
-    parameter bit USE_PLL = 1'b1,
+    // This branch bypasses the PLL and uses the input clock directly.
+    parameter bit USE_PLL = 1'b0,
     parameter INPUT_EVEN_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_even.mem",
     parameter INPUT_ODD_FILE  = "mem/dsconv1_dsconv2/board/sample0_q12_odd.mem",
     parameter CONV1_DW_W_FILE  = "mem/dsconv1_dsconv2/weights/conv1_depthwise_W_kh2.mem",
@@ -91,7 +91,7 @@ module fpga_uart_top #(
     logic [3:0] bcd_hundreds, bcd_tens, bcd_ones;
 
     // ---------------------------------------------------------------
-    // 50 MHz -> 100 MHz core clock
+    // Select the PLL output or the direct input clock.
     // ---------------------------------------------------------------
     generate
         if (USE_PLL) begin : gen_core_pll
@@ -107,7 +107,7 @@ module fpga_uart_top #(
         end
     endgenerate
 
-    // KEY0 或 PLL 尚未 lock 時立即 reset；在 100 MHz clock 下同步釋放。
+    // Assert reset asynchronously and release it on the selected core clock.
     assign core_async_rst_n = KEY[0] & pll_locked;
 
     always_ff @(posedge core_clk_100 or negedge core_async_rst_n) begin
