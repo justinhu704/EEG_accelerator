@@ -2,10 +2,10 @@
 // UART receives one complete sample, writes existing RAM A, runs inference,
 // and returns the class. No third activation/input RAM is instantiated.
 module fpga_uart_top #(
-    // Keep the final-design UART divider unchanged during core power sweeps.
+    // 100 MHz / 921600 baud = 108.5 clocks, rounded to 109.
     parameter integer UART_CLKS_PER_BIT = 109,
-    // This branch bypasses the PLL and uses the input clock directly.
-    parameter bit USE_PLL = 1'b0,
+    // Board deployment branch: use the PLL-generated 100 MHz core clock.
+    parameter bit USE_PLL = 1'b1,
     parameter INPUT_EVEN_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_even.mem",
     parameter INPUT_ODD_FILE  = "mem/dsconv1_dsconv2/board/sample0_q12_odd.mem",
     parameter CONV1_DW_W_FILE  = "mem/dsconv1_dsconv2/weights/conv1_depthwise_W_kh2.mem",
