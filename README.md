@@ -79,15 +79,14 @@ The main memories are:
 - `dsconv12_window_buffer`: six-column even/odd rolling buffer between DSConv1
   and DSConv2.
 - Pool1 internal even/odd max buffers in `dsconv_streaming_pool`.
-- Shared activation RAM for UART input, Pool1 output, GRU output, and FC1 input
-  at different phases of inference.
+- Shared activation RAM for Pool1 output and the final GRU output. FC1 reads
+  the GRU result from this RAM.
 - `pool2_gru_ram`: small buffer between Pool2 and the GRU.
 - M10K-based weight, bias, and activation memories where supported by Quartus.
 
 ## Current RTL Result
 
-The latest complete ModelSim regression uses the 10 ns PLL core-clock period
-defined in `quartus/eeg_accelerator.sdc`.
+The latest complete ModelSim regression uses a 10 ns core-clock test period.
 
 | Measurement | Current result |
 |---|---:|
@@ -115,8 +114,8 @@ is not a replacement for complete test-set accuracy.
 
 The most recent Quartus Full Compilation for the Cyclone V `5CSEMA5F31C6`
 completed without errors. It was run after the phase-1 GRU multiplier sharing,
-but before the unified GRU activation LUT and current PLL integration. Its
-post-fit results are:
+but before the unified GRU activation LUT and the current top-level clock
+configuration. Its post-fit results are:
 
 | Post-fit measurement | Current result |
 |---|---:|
@@ -141,15 +140,18 @@ not claimed by the table above.
 
 ## Clock and UART
 
-The DE1-SoC board provides a physical 50 MHz `CLOCK_50` input. The current
-`fpga_uart_top` uses `pll_50_to_100` to generate a 100 MHz core clock and holds
-the design in reset until the PLL locks. The UART and complete inference path
-run from this generated clock. `UART_CLKS_PER_BIT=109` keeps the external UART
-rate at 921600 baud. The SDC constrains the external oscillator to 20 ns and
-derives the PLL-generated 10 ns clock automatically.
+The DE1-SoC board provides a physical 50 MHz `CLOCK_50` input. This branch sets
+`USE_PLL=1`, and `pll_50_to_100` generates the 100 MHz clock used by the UART
+and complete inference path. Reset remains asserted until the PLL reports that
+the generated clock is locked. The SDC constrains the external oscillator to
+20 ns and derives the PLL-generated clock and clock uncertainty.
 
-UART format: 921600 baud, 8 data bits, no parity, 1 stop bit. Multibyte fields
-are little-endian. The complete packet definition is in
+With the 100 MHz core clock, `UART_CLKS_PER_BIT=109` produces approximately
+917.4 kbaud, which is compatible with the standard 921600-baud host setting.
+
+At a 100 MHz core clock, the UART format is 921600 baud, 8 data bits, no
+parity, and 1 stop bit. Multibyte fields are little-endian. The complete packet
+definition is in
 [`docs/uart_protocol.md`](docs/uart_protocol.md).
 
 ## Hardware and Tools
@@ -162,7 +164,7 @@ are little-endian. The complete packet definition is in
 | RTL | SystemVerilog |
 | Simulation | Questa Altera FPGA / ModelSim |
 | Host tools | MATLAB and Python 3 |
-| UART | 921600 baud, 8N1 |
+| UART | 921600 baud at 100 MHz core, 8N1 |
 
 Install the Python dependency with:
 
@@ -277,8 +279,8 @@ python host\demo_105_subjects_uart.py --port COM10 --baud 921600
 ```
 
 Replace `COM10` with the port shown in Windows Device Manager. The host waits
-for the FPGA response before sending the next sample because activation memory
-is reused during inference.
+for the FPGA response before sending the next sample because the current UART
+loader and accelerator process one complete sample at a time.
 
 ## License
 
