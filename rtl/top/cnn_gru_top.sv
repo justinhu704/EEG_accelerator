@@ -131,7 +131,7 @@ module cnn_gru_top #(
         conv2_addr = conv2_h + 19 * (conv2_column + 152 * conv2_channel);
     end
 
-    // RAM A keeps the input, Pool1 output and final GRU result.
+    // RAM A keeps the Pool1 output and final GRU result.
     always_comb begin
         ram_a_read_en = result_read_en;
         if (conv3_start || (conv3_started && !pool2_finished)) begin
@@ -142,13 +142,10 @@ module cnn_gru_top #(
             ram_a_internal_read_addr = result_read_addr;
         end
 
-        ram_a_write_en = (input_ready && input_write_en) || pool1_valid || gru_valid;
+        ram_a_write_en = pool1_valid || gru_valid;
         if (gru_valid) begin
             ram_a_write_addr = gru_addr[15:0];
             ram_a_write_data = gru_data;
-        end else if (input_ready && input_write_en) begin
-            ram_a_write_addr = {{(RAM_ADDR_W-12){1'b0}}, input_write_addr};
-            ram_a_write_data = input_write_data;
         end else begin
             ram_a_write_addr = {{(RAM_ADDR_W-POOL1_ADDR_W){1'b0}}, pool1_addr};
             ram_a_write_data = pool1_data;
@@ -157,7 +154,7 @@ module cnn_gru_top #(
 
     activation_ram #(
         .DATA_W(16), .DEPTH(RAM_A_DEPTH), .ADDR_W(RAM_ADDR_W),
-        .MEM_FILE(INPUT_FILE), .USE_READ_ENABLE(1'b1)
+        .MEM_FILE(""), .USE_READ_ENABLE(1'b1)
     ) u_ram_a (
         .clk(clk), .write_en(ram_a_write_en),
         .write_addr(ram_a_write_addr), .write_data(ram_a_write_data),
