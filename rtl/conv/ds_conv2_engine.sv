@@ -25,6 +25,7 @@ module ds_conv2_engine #(
     input  logic clk,
     input  logic rst_n,
     input  logic start,
+    input  logic [INPUT_ADDR_WIDTH-1:0] input_base_addr,
 
     output logic busy,
     output logic done,
@@ -32,6 +33,10 @@ module ds_conv2_engine #(
     // Conv1 banked RAM 接收邏輯位址，奇偶 bank 轉換由 RAM 內部完成。
     output logic [INPUT_ADDR_WIDTH-1:0] input_addr_kh0,
     output logic [INPUT_ADDR_WIDTH-1:0] input_addr_kh1,
+    // 直接提供目前 DW 讀取座標，避免外部 RAM 反解線性位址。
+    output logic [((IN_H-K_H+1) > 1 ? $clog2(IN_H-K_H+1) : 1)-1:0] input_issue_h,
+    output logic [((K_W > 1) ? $clog2(K_W) : 1)-1:0] input_issue_kw,
+    output logic [((IN_CH > 1) ? $clog2(IN_CH) : 1)-1:0] input_issue_channel,
     input  logic signed [DATA_WIDTH-1:0] input_data_kh0,
     input  logic signed [DATA_WIDTH-1:0] input_data_kh1,
 
@@ -52,8 +57,8 @@ module ds_conv2_engine #(
     output logic output_last,
     output logic signed [DATA_WIDTH-1:0] output_data,
     output logic [OUTPUT_ADDR_WIDTH-1:0] output_addr,
-    output logic [$clog2(IN_H-K_H+1)-1:0] output_h,
-    output logic [$clog2(IN_W-K_W+1)-1:0] output_w,
+    output logic [((IN_H-K_H+1) > 1 ? $clog2(IN_H-K_H+1) : 1)-1:0] output_h,
+    output logic [((IN_W-K_W+1) > 1 ? $clog2(IN_W-K_W+1) : 1)-1:0] output_w,
     output logic [$clog2(OUT_CH)-1:0] output_channel
 );
 
@@ -82,7 +87,7 @@ module ds_conv2_engine #(
         S_DW_PREP,
         S_DW_STREAM,
         S_DRAIN,
-        S_OUTPUT
+        S_WAIT_BANK
     } state_t;
 
     state_t state;
@@ -93,6 +98,10 @@ module ds_conv2_engine #(
     logic [KW_W-1:0]    dw_issue_kw;
     logic [GROUP_W-1:0] output_group;
     logic [LANE_W-1:0]  output_lane;
+    logic compute_bank;
+    logic output_bank;
+    logic output_active;
+    logic [1:0] result_bank_valid;
 
     // 使用累加位址，避免每拍重新計算完整的 h/w/channel 乘加公式。
     logic [INPUT_ADDR_WIDTH-1:0] spatial_base_addr;
@@ -108,7 +117,8 @@ module ds_conv2_engine #(
     logic [31:0] pw_weight_addr_full;
     logic [31:0] output_channel_full;
 
-    assign busy = (state != S_IDLE);
+    assign busy = (state != S_IDLE) || output_active
+                || (result_bank_valid != 2'b00);
 
     // ------------------------------------------------------------------
     // RAM / ROM 位址
@@ -116,6 +126,9 @@ module ds_conv2_engine #(
     always_comb begin
         input_addr_kh0 = dw_input_addr_counter;
         input_addr_kh1 = dw_input_addr_counter + 1'b1;
+        input_issue_h = out_h_count;
+        input_issue_kw = dw_issue_kw;
+        input_issue_channel = dw_issue_channel;
 
         dw_weight_addr_full = dw_issue_kw + K_W * dw_issue_channel;
         dw_weight_addr = dw_weight_addr_full[$clog2(IN_CH*K_W)-1:0];
@@ -234,8 +247,12 @@ module ds_conv2_engine #(
 
     logic signed [ACC_WIDTH-1:0]
         pw_accumulators [0:OUT_GROUPS-1][0:LANES-1];
+    // 兩組結果 bank：一組串列輸出時，另一組可接收下一個位置。
     logic signed [DATA_WIDTH-1:0]
-        pw_results [0:OUT_GROUPS-1][0:LANES-1];
+        pw_result_banks [0:1][0:OUT_GROUPS-1][0:LANES-1];
+    logic [H_W-1:0] result_h [0:1];
+    logic [W_W-1:0] result_w [0:1];
+    logic result_is_last [0:1];
 
     integer lane;
     logic signed [ACC_WIDTH-1:0] dw_final_sum;
@@ -263,6 +280,16 @@ module ds_conv2_engine #(
             dw_issue_kw      <= '0;
             output_group     <= '0;
             output_lane      <= '0;
+            compute_bank     <= 1'b0;
+            output_bank      <= 1'b0;
+            output_active    <= 1'b0;
+            result_bank_valid <= 2'b00;
+            result_h[0]      <= '0;
+            result_h[1]      <= '0;
+            result_w[0]      <= '0;
+            result_w[1]      <= '0;
+            result_is_last[0] <= 1'b0;
+            result_is_last[1] <= 1'b0;
             spatial_base_addr     <= '0;
             dw_input_addr_counter <= '0;
 
@@ -362,8 +389,8 @@ module ds_conv2_engine #(
                     // 進行 Quantization
                     dw_quantized_value = quantize_dw(dw_final_sum, dw_pair_bias);
 
-                    // K_W=5，兩個完成值間有五拍，足以排入四個 PW group。
-                    // 目前 channel
+                    // 多 channel 時，PW groups 會排入相鄰 DW 完成值之間；
+                    // 單一 input channel 則可在 S_DRAIN 完整送完所有 groups。
                     pw_pending_channel    <= dw_pair_channel;
                     pw_pending_activation <= dw_quantized_value;
                     pw_issue_group        <= '0;
@@ -425,13 +452,84 @@ module ds_conv2_engine #(
             // 第二級完成 bias、定點量化與結果寫入。
             if (pw_finalize_valid) begin
                 for (lane = 0; lane < LANES; lane = lane + 1)
-                    pw_results[pw_finalize_group][lane] <= quantize_pw(pw_finalize_sums[lane], pw_finalize_bias[lane*BIAS_WIDTH +: BIAS_WIDTH]);
+                    pw_result_banks[compute_bank][pw_finalize_group][lane]
+                        <= quantize_pw(
+                            pw_finalize_sums[lane],
+                            pw_finalize_bias[
+                                lane*BIAS_WIDTH +: BIAS_WIDTH]);
 
-                // 最後一組量化完成後，才開始依序輸出 20 channels。
+                // 結果完成後交給獨立 serializer，計算端直接準備下一位置。
                 if (pw_finalize_group == OUT_GROUPS-1) begin
+                    result_bank_valid[compute_bank] <= 1'b1;
+                    result_h[compute_bank] <= out_h_count;
+                    result_w[compute_bank] <= out_w_count;
+                    result_is_last[compute_bank]
+                        <= (out_h_count == OUT_H-1)
+                        && (out_w_count == OUT_W-1);
+
+                    if ((out_h_count == OUT_H-1)
+                     && (out_w_count == OUT_W-1)) begin
+                        // 最後位置只需等待 serializer 將 bank 送完。
+                        state <= S_IDLE;
+                    end else begin
+                        if (out_h_count == OUT_H-1) begin
+                            out_h_count <= '0;
+                            out_w_count <= out_w_count + 1'b1;
+                            spatial_base_addr <= spatial_base_addr + K_H;
+                            dw_input_addr_counter
+                                <= spatial_base_addr + K_H;
+                        end else begin
+                            out_h_count <= out_h_count + 1'b1;
+                            spatial_base_addr <= spatial_base_addr + 1'b1;
+                            dw_input_addr_counter
+                                <= spatial_base_addr + 1'b1;
+                        end
+
+                        compute_bank <= ~compute_bank;
+                        if (!result_bank_valid[~compute_bank])
+                            state <= S_DW_PREP;
+                        else
+                            state <= S_WAIT_BANK;
+                    end
+                end
+            end
+
+            // 獨立輸出控制：上一個位置輸出時，DW/PW 可計算下一位置。
+            if (!output_active) begin
+                if (result_bank_valid[output_bank]) begin
+                    output_active <= 1'b1;
                     output_group <= '0;
-                    output_lane  <= '0;
-                    state        <= S_OUTPUT;
+                    output_lane <= '0;
+                end
+            end else begin
+                output_valid <= 1'b1;
+                output_data <= pw_result_banks[output_bank]
+                                              [output_group][output_lane];
+                output_h <= result_h[output_bank];
+                output_w <= result_w[output_bank];
+                output_channel <= output_channel_full[
+                    $clog2(OUT_CH)-1:0];
+                output_addr <= result_h[output_bank]
+                             + OUT_H * (result_w[output_bank]
+                             + OUT_W * output_channel_full);
+                output_last <= result_is_last[output_bank]
+                            && (output_group == OUT_GROUPS-1)
+                            && (output_lane == LANES-1);
+
+                if (output_lane != LANES-1) begin
+                    output_lane <= output_lane + 1'b1;
+                end else begin
+                    output_lane <= '0;
+                    if (output_group != OUT_GROUPS-1) begin
+                        output_group <= output_group + 1'b1;
+                    end else begin
+                        output_group <= '0;
+                        result_bank_valid[output_bank] <= 1'b0;
+                        output_bank <= ~output_bank;
+                        output_active <= 1'b0;
+                        if (result_is_last[output_bank])
+                            done <= 1'b1;
+                    end
                 end
             end
 
@@ -442,9 +540,13 @@ module ds_conv2_engine #(
                         out_w_count      <= '0;
                         dw_issue_channel <= '0;
                         dw_issue_kw      <= '0;
-                        spatial_base_addr     <= '0;
-                        dw_input_addr_counter <= '0;
+                        spatial_base_addr     <= input_base_addr;
+                        dw_input_addr_counter <= input_base_addr;
                         pw_issue_active  <= 1'b0;
+                        compute_bank <= 1'b0;
+                        output_bank <= 1'b0;
+                        output_active <= 1'b0;
+                        result_bank_valid <= 2'b00;
                         state            <= S_DW_PREP;
                     end
                 end
@@ -485,46 +587,10 @@ module ds_conv2_engine #(
                 S_DRAIN: begin
                 end
 
-                S_OUTPUT: begin
-                    output_valid   <= 1'b1;
-                    output_data    <= pw_results[output_group][output_lane];
-                    output_h       <= out_h_count;
-                    output_w       <= out_w_count;
-                    output_channel <= output_channel_full[
-                        $clog2(OUT_CH)-1:0];
-                    output_addr    <= out_h_count
-                                    + OUT_H * (out_w_count
-                                    + OUT_W * output_channel_full);
-                    output_last    <= (out_w_count == OUT_W-1)
-                                   && (out_h_count == OUT_H-1)
-                                   && (output_group == OUT_GROUPS-1)
-                                   && (output_lane == LANES-1);
-
-                    if (output_lane != LANES-1) begin
-                        output_lane <= output_lane + 1'b1;
-                    end else begin
-                        output_lane <= '0;
-                        if (output_group != OUT_GROUPS-1) begin
-                            output_group <= output_group + 1'b1;
-                        end else if ((out_h_count == OUT_H-1)
-                                  && (out_w_count == OUT_W-1)) begin
-                            done  <= 1'b1;
-                            state <= S_IDLE;
-                        end else begin
-                            output_group <= '0;
-                            if (out_h_count == OUT_H-1) begin
-                                out_h_count <= '0;
-                                out_w_count <= out_w_count + 1'b1;
-                                spatial_base_addr <= spatial_base_addr + K_H;
-                                dw_input_addr_counter <= spatial_base_addr + K_H;
-                            end else begin
-                                out_h_count <= out_h_count + 1'b1;
-                                spatial_base_addr <= spatial_base_addr + 1'b1;
-                                dw_input_addr_counter <= spatial_base_addr + 1'b1;
-                            end
-                            state <= S_DW_PREP;
-                        end
-                    end
+                // 兩個 bank 都尚未被 serializer 釋放時才會停在這裡。
+                S_WAIT_BANK: begin
+                    if (!result_bank_valid[compute_bank])
+                        state <= S_DW_PREP;
                 end
 
                 default: state <= S_IDLE;
@@ -538,7 +604,7 @@ module ds_conv2_engine #(
             $error("ds_conv2_engine currently requires K_H=2");
         if ((OUT_CH % LANES) != 0)
             $error("OUT_CH must be divisible by LANES");
-        if (OUT_GROUPS >= K_W)
+        if ((IN_CH > 1) && (OUT_GROUPS >= K_W))
             $error("Fused PW scheduler requires OUT_GROUPS < K_W");
     end
 `endif

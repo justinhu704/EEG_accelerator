@@ -33,7 +33,7 @@ module tb_streaming_maxpool2;
     streaming_maxpool #(
         .IN_H(IN_H), .IN_W(IN_W), .IN_CH(IN_CH),
         .POOL_W(10), .STRIDE_W(8), .LANES(LANES),
-        .INPUT_F(12), .OUTPUT_F(13)
+        .INPUT_F(12), .OUTPUT_F(12)
     ) dut (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(done),
@@ -43,7 +43,7 @@ module tb_streaming_maxpool2;
     );
 
     initial begin
-        input_file = $fopen("mem/golden/q_relu3_act.mem", "r");
+        input_file = $fopen("mem/dsconv1_dsconv2/golden/q_relu3_act.mem", "r");
         if (input_file == 0) $fatal(1, "Cannot open q_relu3_act.mem");
         for (i = 0; i < INPUT_SIZE; i = i + 1) begin
             scan_status = $fscanf(input_file, "%h", input_mem[i]);
@@ -51,7 +51,7 @@ module tb_streaming_maxpool2;
         end
         $fclose(input_file);
 
-        expected_file = $fopen("mem/golden/q_pool2_act.mem", "r");
+        expected_file = $fopen("mem/dsconv1_dsconv2/golden/q_pool2_act_sample0.mem", "r");
         if (expected_file == 0) $fatal(1, "Cannot open q_pool2_act.mem");
         for (i = 0; i < OUTPUT_SIZE; i = i + 1) begin
             scan_status = $fscanf(expected_file, "%h", expected_mem[i]);

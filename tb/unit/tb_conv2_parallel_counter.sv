@@ -129,7 +129,9 @@ module tb_conv2_parallel_counter;
     ) u_new_conv (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(new_busy), .done(new_done),
-        .input_addr(new_input_addr), .input_data(new_input_data),
+        .input_addr(new_input_addr), .input_required_w(),
+        .input_ready(1'b1),
+        .input_data(new_input_data),
         .weight_addr(new_weight_addr), .weight_data(new_weight_data),
         .bias_addr(new_bias_addr), .bias_data(new_bias_data),
         .output_valid(new_valid), .output_addr(new_output_addr),

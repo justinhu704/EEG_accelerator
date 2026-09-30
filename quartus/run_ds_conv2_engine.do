@@ -64,7 +64,14 @@ add wave -radix decimal {sim:/tb_ds_conv2_engine/dut/pw_accumulators[0][0]}
 add wave sim:/tb_ds_conv2_engine/dut/pw_finalize_valid
 add wave -radix unsigned sim:/tb_ds_conv2_engine/dut/pw_finalize_group
 add wave -radix decimal {sim:/tb_ds_conv2_engine/dut/pw_finalize_sums[0]}
-add wave -radix decimal {sim:/tb_ds_conv2_engine/dut/pw_results[0][0]}
+
+add wave -divider {Double result buffer}
+add wave sim:/tb_ds_conv2_engine/dut/compute_bank
+add wave sim:/tb_ds_conv2_engine/dut/output_bank
+add wave sim:/tb_ds_conv2_engine/dut/result_bank_valid
+add wave sim:/tb_ds_conv2_engine/dut/output_active
+add wave -radix decimal {sim:/tb_ds_conv2_engine/dut/pw_result_banks[0][0][0]}
+add wave -radix decimal {sim:/tb_ds_conv2_engine/dut/pw_result_banks[1][0][0]}
 
 add wave -divider {Serialized output}
 add wave sim:/tb_ds_conv2_engine/output_valid

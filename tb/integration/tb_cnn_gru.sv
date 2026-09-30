@@ -62,8 +62,7 @@ module tb_cnn_gru;
         .GRU_BR_FILE("../mem/weights/gru_br.mem"),
         .GRU_BZ_FILE("../mem/weights/gru_bz.mem"),
         .GRU_BH_FILE("../mem/weights/gru_bh.mem"),
-        .SIGMOID_FILE("../mem/lut/sigmoid_half_lut_q15.mem"),
-        .TANH_FILE("../mem/lut/tanh_half_lut_q15.mem")
+        .ACTIVATION_LUT_FILE("../mem/lut/gru_activation_lut_q15.mem")
     ) dut (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(done),

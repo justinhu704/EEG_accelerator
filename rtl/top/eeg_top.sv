@@ -1,42 +1,43 @@
 // Complete inference path:
 // CNN -> Pool2 -> GRU/flatten -> FC1 -> ReLU -> BN -> FC_out -> Argmax.
 module eeg_top #(
-    parameter INPUT_FILE   = "mem/dsconv2/board/ram_a_sample0_q12.mem",
-    parameter CONV1_W_FILE = "mem/dsconv2/weights/conv1_W.mem",
-    parameter CONV1_B_FILE = "mem/dsconv2/weights/conv1_b.mem",
-    parameter CONV1_PACKED_W_FILE = "mem/dsconv2/weights/conv1_W_x3.mem",
-    parameter CONV1_PACKED_B_FILE = "mem/dsconv2/weights/conv1_b_x3.mem",
-    parameter BN1_A_FILE   = "mem/dsconv2/weights/bn1_A.mem",
-    parameter BN1_B_FILE   = "mem/dsconv2/weights/bn1_B.mem",
-    parameter CONV2_DW_W_FILE = "mem/dsconv2/weights/conv2_depthwise_W_kh2.mem",
-    parameter CONV2_DW_B_FILE = "mem/dsconv2/weights/conv2_depthwise_b.mem",
-    parameter CONV2_PW_W_FILE = "mem/dsconv2/weights/conv2_pointwise_W_x5.mem",
-    parameter CONV2_PW_B_FILE = "mem/dsconv2/weights/conv2_pointwise_b_x5.mem",
-    parameter BN2_A_FILE   = "mem/dsconv2/weights/bn2_A.mem",
-    parameter BN2_B_FILE   = "mem/dsconv2/weights/bn2_B.mem",
-    parameter CONV3_W_FILE = "mem/dsconv2/weights/conv3_W.mem",
-    parameter CONV3_B_FILE = "mem/dsconv2/weights/conv3_b.mem",
-    parameter CONV3_PACKED_W_FILE = "mem/dsconv2/weights/conv3_W_x3.mem",
-    parameter CONV3_PACKED_B_FILE = "mem/dsconv2/weights/conv3_b_x3.mem",
-    parameter BN3_A_FILE   = "mem/dsconv2/weights/bn3_A.mem",
-    parameter BN3_B_FILE   = "mem/dsconv2/weights/bn3_B.mem",
-    parameter GRU_WR_FILE  = "mem/dsconv2/weights/gru_Wr.mem",
-    parameter GRU_WZ_FILE  = "mem/dsconv2/weights/gru_Wz.mem",
-    parameter GRU_WH_FILE  = "mem/dsconv2/weights/gru_Wh.mem",
-    parameter GRU_UR_FILE  = "mem/dsconv2/weights/gru_Ur.mem",
-    parameter GRU_UZ_FILE  = "mem/dsconv2/weights/gru_Uz.mem",
-    parameter GRU_UH_FILE  = "mem/dsconv2/weights/gru_Uh.mem",
-    parameter GRU_BR_FILE  = "mem/dsconv2/weights/gru_br.mem",
-    parameter GRU_BZ_FILE  = "mem/dsconv2/weights/gru_bz.mem",
-    parameter GRU_BH_FILE  = "mem/dsconv2/weights/gru_bh.mem",
-    parameter SIGMOID_FILE = "mem/lut/sigmoid_half_lut_q15.mem",
-    parameter TANH_FILE    = "mem/lut/tanh_half_lut_q15.mem",
-    parameter FC1_W_FILE   = "mem/dsconv2/weights/fc_1_W.mem",
-    parameter FC1_B_FILE   = "mem/dsconv2/weights/fc_1_b.mem",
-    parameter FC_BN_A_FILE = "mem/dsconv2/weights/bn_2_A.mem",
-    parameter FC_BN_B_FILE = "mem/dsconv2/weights/bn_2_B.mem",
-    parameter FC_OUT_W_FILE = "mem/dsconv2/weights/fc_out_W.mem",
-    parameter FC_OUT_B_FILE = "mem/dsconv2/weights/fc_out_b.mem"
+    parameter INPUT_FILE   = "mem/dsconv1_dsconv2/board/ram_a_sample0_q12.mem",
+    parameter INPUT_EVEN_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_even.mem",
+    parameter INPUT_ODD_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_odd.mem",
+    parameter CONV1_DW_W_FILE = "mem/dsconv1_dsconv2/weights/conv1_depthwise_W_kh2.mem",
+    parameter CONV1_DW_B_FILE = "mem/dsconv1_dsconv2/weights/conv1_depthwise_b.mem",
+    parameter CONV1_PW_W_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_W_x3.mem",
+    parameter CONV1_PW_B_FILE = "mem/dsconv1_dsconv2/weights/conv1_pointwise_b_x3.mem",
+    parameter BN1_A_FILE   = "mem/dsconv1_dsconv2/weights/bn1_A.mem",
+    parameter BN1_B_FILE   = "mem/dsconv1_dsconv2/weights/bn1_B.mem",
+    parameter CONV2_DW_W_FILE = "mem/dsconv1_dsconv2/weights/conv2_depthwise_W_kh2.mem",
+    parameter CONV2_DW_B_FILE = "mem/dsconv1_dsconv2/weights/conv2_depthwise_b.mem",
+    parameter CONV2_PW_W_FILE = "mem/dsconv1_dsconv2/weights/conv2_pointwise_W_x5.mem",
+    parameter CONV2_PW_B_FILE = "mem/dsconv1_dsconv2/weights/conv2_pointwise_b_x5.mem",
+    parameter BN2_A_FILE   = "mem/dsconv1_dsconv2/weights/bn2_A.mem",
+    parameter BN2_B_FILE   = "mem/dsconv1_dsconv2/weights/bn2_B.mem",
+    parameter CONV3_W_FILE = "mem/dsconv1_dsconv2/weights/conv3_W.mem",
+    parameter CONV3_B_FILE = "mem/dsconv1_dsconv2/weights/conv3_b.mem",
+    parameter CONV3_PACKED_W_FILE = "mem/dsconv1_dsconv2/weights/conv3_W_x3.mem",
+    parameter CONV3_PACKED_B_FILE = "mem/dsconv1_dsconv2/weights/conv3_b_x3.mem",
+    parameter BN3_A_FILE   = "mem/dsconv1_dsconv2/weights/bn3_A.mem",
+    parameter BN3_B_FILE   = "mem/dsconv1_dsconv2/weights/bn3_B.mem",
+    parameter GRU_WR_FILE  = "mem/dsconv1_dsconv2/weights/gru_Wr.mem",
+    parameter GRU_WZ_FILE  = "mem/dsconv1_dsconv2/weights/gru_Wz.mem",
+    parameter GRU_WH_FILE  = "mem/dsconv1_dsconv2/weights/gru_Wh.mem",
+    parameter GRU_UR_FILE  = "mem/dsconv1_dsconv2/weights/gru_Ur.mem",
+    parameter GRU_UZ_FILE  = "mem/dsconv1_dsconv2/weights/gru_Uz.mem",
+    parameter GRU_UH_FILE  = "mem/dsconv1_dsconv2/weights/gru_Uh.mem",
+    parameter GRU_BR_FILE  = "mem/dsconv1_dsconv2/weights/gru_br.mem",
+    parameter GRU_BZ_FILE  = "mem/dsconv1_dsconv2/weights/gru_bz.mem",
+    parameter GRU_BH_FILE  = "mem/dsconv1_dsconv2/weights/gru_bh.mem",
+    parameter ACTIVATION_LUT_FILE = "mem/lut/gru_activation_lut_q15.mem",
+    parameter FC1_W_FILE   = "mem/dsconv1_dsconv2/weights/fc_1_W.mem",
+    parameter FC1_B_FILE   = "mem/dsconv1_dsconv2/weights/fc_1_b.mem",
+    parameter FC_BN_A_FILE = "mem/dsconv1_dsconv2/weights/bn_2_A.mem",
+    parameter FC_BN_B_FILE = "mem/dsconv1_dsconv2/weights/bn_2_B.mem",
+    parameter FC_OUT_W_FILE = "mem/dsconv1_dsconv2/weights/fc_out_W.mem",
+    parameter FC_OUT_B_FILE = "mem/dsconv1_dsconv2/weights/fc_out_b.mem"
 ) (
     input  logic               clk,
     input  logic               rst_n,
@@ -100,9 +101,10 @@ module eeg_top #(
     // Result RAM A addresses 0..161 hold the flattened GRU result.
     cnn_gru_top #(
         .INPUT_FILE(INPUT_FILE),
-        .CONV1_W_FILE(CONV1_W_FILE), .CONV1_B_FILE(CONV1_B_FILE),
-        .CONV1_PACKED_W_FILE(CONV1_PACKED_W_FILE),
-        .CONV1_PACKED_B_FILE(CONV1_PACKED_B_FILE),
+        .INPUT_EVEN_FILE(INPUT_EVEN_FILE), .INPUT_ODD_FILE(INPUT_ODD_FILE),
+        .CONV1_DW_W_FILE(CONV1_DW_W_FILE), .CONV1_DW_B_FILE(CONV1_DW_B_FILE),
+        .CONV1_PW_W_FILE(CONV1_PW_W_FILE),
+        .CONV1_PW_B_FILE(CONV1_PW_B_FILE),
         .BN1_A_FILE(BN1_A_FILE), .BN1_B_FILE(BN1_B_FILE),
         .CONV2_DW_W_FILE(CONV2_DW_W_FILE),
         .CONV2_DW_B_FILE(CONV2_DW_B_FILE),
@@ -118,7 +120,7 @@ module eeg_top #(
         .GRU_UZ_FILE(GRU_UZ_FILE), .GRU_UH_FILE(GRU_UH_FILE),
         .GRU_BR_FILE(GRU_BR_FILE), .GRU_BZ_FILE(GRU_BZ_FILE),
         .GRU_BH_FILE(GRU_BH_FILE),
-        .SIGMOID_FILE(SIGMOID_FILE), .TANH_FILE(TANH_FILE)
+        .ACTIVATION_LUT_FILE(ACTIVATION_LUT_FILE)
     ) u_cnn_gru (
         .clk(clk), .rst_n(rst_n), .start(cnn_start),
         .busy(), .done(cnn_done),
@@ -139,7 +141,8 @@ module eeg_top #(
 
     fc_engine #(
         .INPUT_SIZE(162), .OUTPUT_SIZE(40),
-        .BIAS_SHIFT(16), .OUTPUT_SHIFT(18),
+        // flatten(Q15) * weight(Q15) 為 Q30，右移 17 位得到 FC1 的 Q13。
+        .BIAS_SHIFT(16), .OUTPUT_SHIFT(17),
         .WEIGHT_FILE(FC1_W_FILE), .BIAS_FILE(FC1_B_FILE)
     ) u_fc1 (
         .clk(clk), .rst_n(rst_n), .start(fc1_start),
@@ -156,7 +159,7 @@ module eeg_top #(
 
     // FC1/ReLU is Q13. A is Q13 and B is Q12, producing Q12.
     bn_affine #(
-        .CHANNELS(40), .BIAS_SHIFT(13), .OUTPUT_SHIFT(13),
+        .CHANNELS(40), .BIAS_SHIFT(14), .OUTPUT_SHIFT(14),
         .A_FILE(FC_BN_A_FILE), .B_FILE(FC_BN_B_FILE)
     ) u_fc_bn (
         .clk(clk), .rst_n(rst_n),
