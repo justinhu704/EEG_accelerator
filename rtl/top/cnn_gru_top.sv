@@ -64,43 +64,35 @@ module cnn_gru_top #(
 
     logic conv1_start, conv1_busy, conv1_valid, conv1_last;
     logic [31:0] conv1_input_addr_kh0, conv1_input_addr_kh1;
-    logic [4:0] conv1_input_h_unused;
-    logic [2:0] conv1_input_kw_unused;
-    logic conv1_input_channel_unused;
-    logic [31:0] conv1_local_addr, conv1_addr;
     logic [4:0] conv1_h, conv1_channel;
-    logic conv1_w_unused;
     logic signed [15:0] conv1_data;
     logic [7:0] conv1_column;
     logic [2:0] conv1_write_slot;
 
     logic conv2_start, conv2_busy, conv2_valid, conv2_last;
     logic conv2_global_last;
-    logic [31:0] conv2_input_addr, conv2_input_addr_kh1;
     logic [4:0] conv2_input_h, conv2_input_channel;
     logic [2:0] conv2_input_kw;
-    logic [31:0] conv2_local_addr, conv2_addr;
     logic [4:0] conv2_h, conv2_channel;
-    logic conv2_w_unused;
     logic signed [15:0] conv2_data;
     logic [7:0] conv2_column;
     logic [2:0] conv2_window_slot;
-    logic conv12_start, conv12_busy, conv12_done;
+    logic conv12_start, conv12_done;
     logic conv12_finished;
 
-    logic conv3_start, conv3_busy, conv3_valid;
-    logic [31:0] conv3_input_addr, conv3_addr;
+    logic conv3_start, conv3_valid;
+    logic [31:0] conv3_input_addr;
     logic [31:0] conv3_required_w;
     logic conv3_input_ready;
     logic conv3_started;
     logic signed [15:0] conv3_data;
-    logic pool1_start, pool1_busy, pool1_done, pool1_valid;
+    logic pool1_start, pool1_done, pool1_valid;
     logic [12:0] pool1_addr;
     logic signed [15:0] pool1_data;
-    logic pool2_start, pool2_busy, pool2_done, pool2_valid;
+    logic pool2_start, pool2_done, pool2_valid;
     logic [12:0] pool2_addr;
     logic signed [15:0] pool2_data;
-    logic gru_start, gru_busy, gru_done, gru_valid;
+    logic gru_start, gru_done, gru_valid;
     logic [31:0] gru_input_addr, gru_addr;
     logic signed [15:0] gru_data;
 
@@ -127,8 +119,6 @@ module cnn_gru_top #(
         conv3_input_ready = pool1_finished
                          || (conv3_required_w < pool1_columns_ready);
 
-        conv1_addr = conv1_h + 20 * (conv1_column + 156 * conv1_channel);
-        conv2_addr = conv2_h + 19 * (conv2_column + 152 * conv2_channel);
     end
 
     // RAM A keeps the Pool1 output and final GRU result.
@@ -191,14 +181,14 @@ module cnn_gru_top #(
         .input_base_addr(conv1_column * 21), .busy(conv1_busy),
         .input_addr_kh0(conv1_input_addr_kh0),
         .input_addr_kh1(conv1_input_addr_kh1),
-        .input_issue_h(conv1_input_h_unused),
-        .input_issue_kw(conv1_input_kw_unused),
-        .input_issue_channel(conv1_input_channel_unused),
+        .input_issue_h(),
+        .input_issue_kw(),
+        .input_issue_channel(),
         .input_data_kh0(input_shadow_data_kh0),
         .input_data_kh1(input_shadow_data_kh1),
         .output_valid(conv1_valid), .output_last(conv1_last),
-        .output_addr(conv1_local_addr), .output_h(conv1_h),
-        .output_w(conv1_w_unused), .output_channel(conv1_channel),
+        .output_addr(), .output_h(conv1_h),
+        .output_w(), .output_channel(conv1_channel),
         .output_data(conv1_data)
     );
 
@@ -208,7 +198,7 @@ module cnn_gru_top #(
         .clk(clk), .rst_n(rst_n), .start(conv12_start),
         .conv1_column_done(conv1_valid && conv1_last),
         .conv2_window_done(conv2_valid && conv2_last),
-        .busy(conv12_busy), .done(conv12_done),
+        .busy(), .done(conv12_done),
         .conv1_start(conv1_start), .conv1_column(conv1_column),
         .conv1_write_slot(conv1_write_slot),
         .conv2_start(conv2_start), .conv2_column(conv2_column),
@@ -241,16 +231,16 @@ module cnn_gru_top #(
     ) u_conv2_bn_relu (
         .clk(clk), .rst_n(rst_n), .start(conv2_start),
         .input_base_addr(32'd0), .busy(conv2_busy),
-        .input_addr_kh0(conv2_input_addr),
-        .input_addr_kh1(conv2_input_addr_kh1),
+        .input_addr_kh0(),
+        .input_addr_kh1(),
         .input_issue_h(conv2_input_h),
         .input_issue_kw(conv2_input_kw),
         .input_issue_channel(conv2_input_channel),
         .input_data_kh0(conv1_buffer_kh0),
         .input_data_kh1(conv1_buffer_kh1),
         .output_valid(conv2_valid), .output_last(conv2_last),
-        .output_addr(conv2_local_addr), .output_h(conv2_h),
-        .output_w(conv2_w_unused), .output_channel(conv2_channel),
+        .output_addr(), .output_h(conv2_h),
+        .output_w(), .output_channel(conv2_channel),
         .output_data(conv2_data)
     );
 
@@ -259,7 +249,7 @@ module cnn_gru_top #(
         .POOL_W(10), .STRIDE_W(8), .INPUT_F(11), .OUTPUT_F(11)
     ) u_pool1 (
         .clk(clk), .rst_n(rst_n), .start(pool1_start),
-        .busy(pool1_busy), .done(pool1_done),
+        .busy(), .done(pool1_done),
         .input_valid(conv2_valid), .input_last(conv2_global_last),
         .input_data(conv2_data), .input_h(conv2_h),
         .input_w(conv2_column), .input_channel(conv2_channel),
@@ -278,10 +268,10 @@ module cnn_gru_top #(
         .PACKED_BIAS_FILE(CONV3_PACKED_B_FILE),
         .BN_A_FILE(BN3_A_FILE), .BN_B_FILE(BN3_B_FILE)
     ) u_conv3_bn_relu (
-        .clk(clk), .rst_n(rst_n), .start(conv3_start), .busy(conv3_busy),
+        .clk(clk), .rst_n(rst_n), .start(conv3_start), .busy(),
         .input_addr(conv3_input_addr), .input_required_w(conv3_required_w),
         .input_ready(conv3_input_ready), .input_data(ram_a_read_data),
-        .output_valid(conv3_valid), .output_addr(conv3_addr),
+        .output_valid(conv3_valid), .output_addr(),
         .output_data(conv3_data)
     );
 
@@ -291,7 +281,7 @@ module cnn_gru_top #(
         .INPUT_F(12), .OUTPUT_F(12)
     ) u_pool2 (
         .clk(clk), .rst_n(rst_n), .start(pool2_start),
-        .busy(pool2_busy), .done(pool2_done),
+        .busy(), .done(pool2_done),
         .input_valid(conv3_valid), .input_data(conv3_data),
         .output_valid(pool2_valid), .output_addr(pool2_addr),
         .output_data(pool2_data)
@@ -311,7 +301,7 @@ module cnn_gru_top #(
         .ACTIVATION_LUT_FILE(ACTIVATION_LUT_FILE)
     ) u_gru (
         .clk(clk), .rst_n(rst_n), .start(gru_start),
-        .busy(gru_busy), .done(gru_done),
+        .busy(), .done(gru_done),
         .input_addr(gru_input_addr), .input_data(shared_pool2_gru_data),
         .output_valid(gru_valid), .output_addr(gru_addr), .output_data(gru_data)
     );
@@ -536,7 +526,6 @@ module conv_bn_relu_parallel_block #(
     localparam int PACKED_WEIGHT_ADDR_W = $clog2(PACKED_WEIGHT_DEPTH);
     localparam int PACKED_BIAS_ADDR_W = $clog2(OUT_GROUPS);
 
-    logic conv_done_unused;
     logic conv_valid;
     logic [31:0] weight_addr, bias_addr, conv_addr, conv_channel;
     logic signed [(16*LANES)-1:0] packed_weight_data;
@@ -581,7 +570,7 @@ module conv_bn_relu_parallel_block #(
         .REGISTER_MAC_INPUTS(REGISTER_MAC_INPUTS)
     ) u_conv (
         .clk(clk), .rst_n(rst_n), .start(start),
-        .busy(busy), .done(conv_done_unused),
+        .busy(busy), .done(),
         .input_addr(input_addr), .input_required_w(input_required_w),
         .input_ready(input_ready), .input_data(input_data),
         .weight_addr(weight_addr), .weight_data(packed_weight_data),

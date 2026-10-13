@@ -62,7 +62,7 @@ module fpga_uart_top #(
     logic core_async_rst_n;
 
     logic [7:0] rx_data;
-    logic rx_valid, rx_framing_error, rx_busy;
+    logic rx_valid, rx_framing_error;
     logic tx_start, tx_busy, tx_done;
     logic [7:0] tx_data;
 
@@ -77,14 +77,9 @@ module fpga_uart_top #(
     logic core_busy, core_done;
     logic [6:0] core_class_index;
     logic signed [15:0] core_winning_logit;
-    logic logit_valid_unused;
-    logic [6:0] logit_index_unused;
-    logic signed [15:0] logit_data_unused;
-    logic signed [15:0] logit_read_data_unused;
-
     logic response_start;
     logic [7:0] response_status;
-    logic response_busy, response_done;
+    logic response_busy;
     logic result_valid, packet_error_latched;
     logic [6:0] class_latched;
     logic [6:0] subject_id;
@@ -107,7 +102,7 @@ module fpga_uart_top #(
         end
     endgenerate
 
-    // Assert reset asynchronously and release it on the selected core clock.
+    // 組合非同步復位條件：當按鍵 KEY[0] 按下 或 PLL 未鎖定時，立即產生非同步復位
     assign core_async_rst_n = KEY[0] & pll_locked;
 
     always_ff @(posedge core_clk_100 or negedge core_async_rst_n) begin
@@ -116,12 +111,17 @@ module fpga_uart_top #(
         else
             reset_sync <= {reset_sync[0], 1'b1};
     end
+    
+    // 使用同步完成的reset_sync
     assign rst_n = reset_sync[1];
 
+    // ---------------------------------------------------------------
+    //UART接收
+    // ---------------------------------------------------------------
     uart_rx #(.CLKS_PER_BIT(UART_CLKS_PER_BIT)) u_uart_rx (
         .clk(core_clk_100), .rst_n(rst_n), .serial_rx(UART_RXD),
         .data(rx_data), .valid(rx_valid),
-        .framing_error(rx_framing_error), .busy(rx_busy)
+        .framing_error(rx_framing_error), .busy()
     );
 
     uart_sample_loader #(.SAMPLE_WORDS(3360), .ADDR_W(12)) u_loader (
@@ -139,6 +139,9 @@ module fpga_uart_top #(
         .packet_error(packet_error), .packet_loaded(packet_loaded)
     );
 
+    // ---------------------------------------------------------------
+    // inference core
+    // ---------------------------------------------------------------
     eeg_top #(
         .INPUT_FILE(""),
         .INPUT_EVEN_FILE(INPUT_EVEN_FILE),
@@ -173,17 +176,15 @@ module fpga_uart_top #(
         .input_write_data(input_write_data),
         .input_ready(input_ready),
         .class_index(core_class_index),
-        .winning_logit(core_winning_logit),
-        .logit_valid(logit_valid_unused),
-        .logit_index(logit_index_unused),
-        .logit_data(logit_data_unused),
-        .logit_read_addr(7'd0),
-        .logit_read_data(logit_read_data_unused)
+        .winning_logit(core_winning_logit)
     );
 
     assign response_start  = core_done || packet_error;
     assign response_status = packet_error ? 8'd1 : 8'd0;
 
+    // ---------------------------------------------------------------
+    // UART 輸出
+    // ---------------------------------------------------------------
     uart_result_sender u_result_sender (
         .clk(core_clk_100), .rst_n(rst_n), .start(response_start),
         .sample_id(sample_id), .status(response_status),
@@ -191,7 +192,7 @@ module fpga_uart_top #(
         .winning_logit(packet_error ? 16'sd0 : core_winning_logit),
         .tx_start(tx_start), .tx_data(tx_data),
         .tx_busy(tx_busy), .tx_done(tx_done),
-        .busy(response_busy), .done(response_done)
+        .busy(response_busy), .done()
     );
 
     uart_tx #(.CLKS_PER_BIT(UART_CLKS_PER_BIT)) u_uart_tx (
@@ -219,9 +220,10 @@ module fpga_uart_top #(
         end
     end
 
-    // Convert the model's compact class index (0..104) back to the original
-    // PhysioNet subject number (S001..S109). The dataset omits S088, S092,
-    // S100 and S104, so those identifiers are skipped by this mapping.
+    // ---------------------------------------------------------------
+    // 轉換為原本的編號(S001...S109)
+    // 自動跳過S088, S092, S100, S104
+    // ---------------------------------------------------------------
     class_to_subject_id u_class_to_subject_id (
         .class_index(class_latched),
         .subject_id(subject_id)
@@ -242,7 +244,7 @@ module fpga_uart_top #(
         .digit(bcd_hundreds), .blank(!result_valid), .segments(HEX2)
     );
 
-    // Active-low seven-segment pattern for the letter S (same as digit 5).
+    // 點亮 S
     assign HEX3 = result_valid ? 7'b0010010 : 7'b1111111;
     assign HEX4 = 7'b1111111;
     assign HEX5 = 7'b1111111;

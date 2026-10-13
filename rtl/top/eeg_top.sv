@@ -1,5 +1,6 @@
 // Complete inference path:
 // CNN -> Pool2 -> GRU/flatten -> FC1 -> ReLU -> BN -> FC_out -> Argmax.
+
 module eeg_top #(
     parameter INPUT_FILE   = "mem/dsconv1_dsconv2/board/ram_a_sample0_q12.mem",
     parameter INPUT_EVEN_FILE = "mem/dsconv1_dsconv2/board/sample0_q12_even.mem",
@@ -45,32 +46,21 @@ module eeg_top #(
     output logic               busy,
     output logic               done,
 
-    // Load one quantized EEG sample into input RAM before asserting start.
-    // Valid addresses are 0..3359 (21x160, signed Q12 values).
+    // 在啟動 (start) 前，先將單一筆量化後的 EEG 樣本載入輸入 RAM。
+    // 有效位址範圍為 0..3359（21x160，帶正負號的 Q12 格式數值）。
     input  logic               input_write_en,
     input  logic [11:0]        input_write_addr,
     input  logic signed [15:0] input_write_data,
     output logic               input_ready,
 
     output logic [6:0]         class_index,
-    output logic signed [15:0] winning_logit,
-
-    // Verification/debug stream from the final 105-output FC layer.
-    output logic               logit_valid,
-    output logic [6:0]         logit_index,
-    output logic signed [15:0] logit_data,
-
-    // Synchronous debug readback of the stored 105 logits.
-    input  logic [6:0]         logit_read_addr,
-    output logic signed [15:0] logit_read_data
+    output logic signed [15:0] winning_logit
 );
     logic cnn_start, cnn_done;
     logic cnn_input_ready;
-    logic fc1_start, fc1_busy, fc1_done;
-    logic fc_out_start, fc_out_done;
+    logic fc1_start, fc1_busy;
     logic argmax_start, argmax_done;
 
-    logic [31:0] cnn_ram_addr;
     logic signed [15:0] cnn_ram_data;
 
     logic [31:0] fc1_input_addr, fc1_output_addr;
@@ -88,17 +78,16 @@ module eeg_top #(
     logic signed [15:0] fc_out_output_data;
     logic fc_out_output_valid;
 
+    // 控制 CNN/GRU → FC1 → ReLU/BN → FC_out 的完整推理流程。
     eeg_controller u_controller (
         .clk(clk), .rst_n(rst_n), .start(start),
         .cnn_gru_done(cnn_done), .fc1_bn_done(fc1_bn_done),
-        .fc_out_done(fc_out_done), .argmax_done(argmax_done),
+        .argmax_done(argmax_done),
         .cnn_gru_start(cnn_start), .fc1_start(fc1_start),
-        .fc_out_start(fc_out_start), .argmax_start(argmax_start),
+        .argmax_start(argmax_start),
         .busy(busy), .done(done)
     );
 
-    // This contains both activation RAMs and the complete CNN/GRU path.
-    // Result RAM A addresses 0..161 hold the flattened GRU result.
     cnn_gru_top #(
         .INPUT_FILE(INPUT_FILE),
         .INPUT_EVEN_FILE(INPUT_EVEN_FILE), .INPUT_ODD_FILE(INPUT_ODD_FILE),
@@ -130,13 +119,11 @@ module eeg_top #(
         .input_ready(cnn_input_ready),
         .output_valid(), .output_addr(), .output_data(),
         .result_read_en(fc1_start || fc1_busy),
-        .result_read_addr(cnn_ram_addr[15:0]),
+        .result_read_addr(fc1_input_addr[15:0]),
         .result_read_data(cnn_ram_data)
     );
 
-    assign cnn_ram_addr = fc1_input_addr;
-    // cnn_gru_top becomes locally idle after GRU, but FC1 still needs the
-    // final-result RAM B contents. Therefore global busy/done also gate input.
+    // 全域 busy/done 控制輸入
     assign input_ready = cnn_input_ready && !busy && !done;
 
     fc_engine #(
@@ -146,7 +133,7 @@ module eeg_top #(
         .WEIGHT_FILE(FC1_W_FILE), .BIAS_FILE(FC1_B_FILE)
     ) u_fc1 (
         .clk(clk), .rst_n(rst_n), .start(fc1_start),
-        .busy(fc1_busy), .done(fc1_done),
+        .busy(fc1_busy), .done(),
         .input_addr(fc1_input_addr), .input_data(cnn_ram_data),
         .output_valid(fc1_output_valid),
         .output_addr(fc1_output_addr), .output_data(fc1_output_data)
@@ -185,16 +172,15 @@ module eeg_top #(
 
     assign fc1_bn_done = fc_bn_valid && (fc_addr_d2 == 32'd39);
 
-    // Stream each FC1/BN result directly into FC_out. FC1 produces one value
-    // about every 162 MAC clocks, allowing this engine to update all 105
-    // class accumulators before the next BN value arrives.
+    // 以 streaming 計算 FC_out
+    // FC1 大約 162 個 cycle 產生一個 result，因此可在下一 BN 數值到來前更新 105 類別累加器
     fc_out_streaming #(
         .INPUT_SIZE(40), .OUTPUT_SIZE(105),
         .BIAS_SHIFT(12), .OUTPUT_SHIFT(17),
         .WEIGHT_FILE(FC_OUT_W_FILE), .BIAS_FILE(FC_OUT_B_FILE)
     ) u_fc_out (
         .clk(clk), .rst_n(rst_n), .start(fc1_start),
-        .busy(), .done(fc_out_done),
+        .busy(), .done(),
         .input_valid(fc_bn_valid), .input_index(fc_addr_d2[5:0]),
         .input_data(fc_bn_data),
         .output_valid(fc_out_output_valid),
@@ -220,7 +206,4 @@ module eeg_top #(
         .class_index(class_index), .max_value(winning_logit)
     );
 
-    assign logit_valid = fc_out_output_valid;
-    assign logit_index = fc_out_output_addr;
-    assign logit_data  = fc_out_output_data;
 endmodule

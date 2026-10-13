@@ -56,7 +56,6 @@ module ds_conv2_bn_relu_block #(
     logic signed [(16*LANES)-1:0] pw_weight_data;
     logic signed [(16*LANES)-1:0] pw_bias_data;
 
-    logic conv_done_unused;
     logic conv_valid, conv_last;
     logic [31:0] conv_addr;
     logic [((OUT_H > 1) ? $clog2(OUT_H) : 1)-1:0] conv_h;
@@ -119,7 +118,7 @@ module ds_conv2_bn_relu_block #(
     ) u_ds_conv2 (
         .clk(clk), .rst_n(rst_n), .start(start),
         .input_base_addr(input_base_addr),
-        .busy(busy), .done(conv_done_unused),
+        .busy(busy), .done(),
         .input_addr_kh0(input_addr_kh0),
         .input_addr_kh1(input_addr_kh1),
         .input_issue_h(input_issue_h),

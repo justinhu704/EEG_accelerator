@@ -51,3 +51,6 @@ quartus/modelsim.ini
 quartus/run_relu1_packed_buffer_adapter.do
 rtl/memory/relu1_packed_buffer_adapter.sv
 tb/unit/tb_relu1_packed_buffer_adapter.sv
+
+# Ignore output photos
+KI_output
