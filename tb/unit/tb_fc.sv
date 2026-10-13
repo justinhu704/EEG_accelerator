@@ -15,10 +15,10 @@ module tb_fc;
     logic start;
     logic busy;
     logic done;
-    logic [31:0] input_addr;
+    logic [7:0] input_addr;
     logic signed [15:0] input_data;
     logic output_valid;
-    logic [31:0] output_addr;
+    logic [5:0] output_addr;
     logic signed [15:0] output_data;
     logic signed [15:0] expected_mem [0:GOLDEN_DEPTH-1];
 
@@ -39,7 +39,7 @@ module tb_fc;
         .clk(clk),
         .write_en(1'b0),
         .write_addr('0), .write_data('0),
-        .read_addr(input_addr[$clog2(INPUT_DEPTH)-1:0]),
+        .read_addr(input_addr),
         .read_data(input_data)
     );
 

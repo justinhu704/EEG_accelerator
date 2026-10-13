@@ -40,14 +40,14 @@ module cnn_gru_top #(
     input logic signed [15:0] input_write_data,
     output logic input_ready,
     output logic output_valid,
-    output logic [31:0] output_addr,
+    output logic [7:0] output_addr,
     output logic signed [15:0] output_data,
     input logic result_read_en,
-    input logic [15:0] result_read_addr,
+    input logic [12:0] result_read_addr,
     output logic signed [15:0] result_read_data
 );
     localparam int RAM_A_DEPTH = 19 * 18 * 20;
-    localparam int RAM_ADDR_W = 16;
+    localparam int RAM_ADDR_W = $clog2(RAM_A_DEPTH);
     localparam int POOL1_ADDR_W = 13;
     localparam int POOL1_OUT_H = 19;
     localparam int POOL1_OUT_W = 18;
@@ -93,7 +93,8 @@ module cnn_gru_top #(
     logic [12:0] pool2_addr;
     logic signed [15:0] pool2_data;
     logic gru_start, gru_done, gru_valid;
-    logic [31:0] gru_input_addr, gru_addr;
+    logic [8:0] gru_input_addr;
+    logic [7:0] gru_addr;
     logic signed [15:0] gru_data;
 
     logic [RAM_ADDR_W-1:0] ram_a_internal_read_addr;
@@ -125,7 +126,7 @@ module cnn_gru_top #(
     always_comb begin
         ram_a_read_en = result_read_en;
         if (conv3_start || (conv3_started && !pool2_finished)) begin
-            ram_a_internal_read_addr = conv3_input_addr[15:0];
+            ram_a_internal_read_addr = conv3_input_addr[RAM_ADDR_W-1:0];
             ram_a_read_en = 1'b1;
         end
         else begin
@@ -134,10 +135,10 @@ module cnn_gru_top #(
 
         ram_a_write_en = pool1_valid || gru_valid;
         if (gru_valid) begin
-            ram_a_write_addr = gru_addr[15:0];
+            ram_a_write_addr = {{(RAM_ADDR_W-8){1'b0}}, gru_addr};
             ram_a_write_data = gru_data;
         end else begin
-            ram_a_write_addr = {{(RAM_ADDR_W-POOL1_ADDR_W){1'b0}}, pool1_addr};
+            ram_a_write_addr = pool1_addr;
             ram_a_write_data = pool1_data;
         end
     end
@@ -291,7 +292,7 @@ module cnn_gru_top #(
         .clk(clk), .write_en(pool2_valid), .write_addr(pool2_addr[8:0]),
         .write_data(pool2_data),
         .read_en((state == S_START_GRU) || (state == S_RUN_GRU)),
-        .read_addr(gru_input_addr[8:0]), .read_data(shared_pool2_gru_data)
+        .read_addr(gru_input_addr), .read_data(shared_pool2_gru_data)
     );
 
     gru_engine_pipeline #(
@@ -314,7 +315,8 @@ module cnn_gru_top #(
             pool2_finished <= 1'b0;
             conv3_started <= 1'b0;
             pool1_columns_ready <= '0;
-            pool1_column_last_addr <= POOL1_FIRST_COLUMN_LAST_ADDR;
+            pool1_column_last_addr
+                <= POOL1_ADDR_W'(POOL1_FIRST_COLUMN_LAST_ADDR);
         end else begin
             if (conv12_done)
                 conv12_finished <= 1'b1;
@@ -329,7 +331,7 @@ module cnn_gru_top #(
             if (pool1_valid && (pool1_addr == pool1_column_last_addr)) begin
                 pool1_columns_ready <= pool1_columns_ready + 1'b1;
                 pool1_column_last_addr <= pool1_column_last_addr
-                                        + POOL1_OUT_H;
+                                        + POOL1_ADDR_W'(POOL1_OUT_H);
             end
 
             case (state)
@@ -339,7 +341,8 @@ module cnn_gru_top #(
                     pool2_finished <= 1'b0;
                     conv3_started <= 1'b0;
                     pool1_columns_ready <= '0;
-                    pool1_column_last_addr <= POOL1_FIRST_COLUMN_LAST_ADDR;
+                    pool1_column_last_addr
+                        <= POOL1_ADDR_W'(POOL1_FIRST_COLUMN_LAST_ADDR);
                     state <= S_START_CNN;
                 end
                 S_START_CNN: state <= S_RUN_CNN;

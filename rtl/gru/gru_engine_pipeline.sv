@@ -21,6 +21,10 @@ module gru_engine_pipeline #(
     parameter int INPUT_SIZE  = 15,
     parameter int HIDDEN_SIZE = 9,
     parameter int TIME_STEPS  = 18,
+    parameter int INPUT_DATA_ADDR_W = ((INPUT_SIZE * TIME_STEPS) <= 1)
+                                          ? 1 : $clog2(INPUT_SIZE * TIME_STEPS),
+    parameter int OUTPUT_DATA_ADDR_W = ((HIDDEN_SIZE * TIME_STEPS) <= 1)
+                                           ? 1 : $clog2(HIDDEN_SIZE * TIME_STEPS),
     parameter WR_FILE = "mem/weights/gru_Wr.mem",
     parameter WZ_FILE = "mem/weights/gru_Wz.mem",
     parameter WH_FILE = "mem/weights/gru_Wh.mem",
@@ -39,11 +43,11 @@ module gru_engine_pipeline #(
     output logic               done,
 
     // External synchronous activation RAM interface.
-    output logic [31:0]        input_addr,
+    output logic [INPUT_DATA_ADDR_W-1:0] input_addr,
     input  logic signed [15:0] input_data,
 
     output logic               output_valid,
-    output logic [31:0]        output_addr,
+    output logic [OUTPUT_DATA_ADDR_W-1:0] output_addr,
     output logic signed [15:0] output_data
 );
     localparam int INPUT_WEIGHT_DEPTH = HIDDEN_SIZE * INPUT_SIZE;
@@ -137,7 +141,7 @@ module gru_engine_pipeline #(
     logic [HIDDEN_INDEX_W-1:0] gated_hidden_index;
     logic [HIDDEN_INDEX_W-1:0] hidden_copy_index;
     logic load_data_valid;
-    logic [31:0] input_addr_counter;
+    logic [INPUT_DATA_ADDR_W-1:0] input_addr_counter;
 
     logic signed [63:0] reset_accumulator;
     logic signed [63:0] update_accumulator;
@@ -486,7 +490,7 @@ module gru_engine_pipeline #(
                     else begin
                         issue_index <= issue_index + 1'b1;
                         input_addr_counter <= input_addr_counter
-                                            + TIME_STEPS;
+                                            + INPUT_DATA_ADDR_W'(TIME_STEPS);
                     end
                 end
 
@@ -534,7 +538,8 @@ module gru_engine_pipeline #(
                         state <= S_GATE_INPUT_DRAIN;
                     end else begin
                         feature_index <= feature_index + 1'b1;
-                        gate_input_addr <= gate_input_addr + HIDDEN_SIZE;
+                        gate_input_addr <= gate_input_addr
+                                         + INPUT_ADDR_W'(HIDDEN_SIZE);
                     end
                 end
 
@@ -559,7 +564,8 @@ module gru_engine_pipeline #(
                     end else begin
                         recurrent_index <= recurrent_index + 1'b1;
                         gate_recurrent_addr
-                            <= gate_recurrent_addr + HIDDEN_SIZE;
+                            <= gate_recurrent_addr
+                             + RECURRENT_ADDR_W'(HIDDEN_SIZE);
                     end
                 end
 
@@ -741,8 +747,9 @@ module gru_engine_pipeline #(
                     hidden_next[hm_neuron]
                         <= saturate16(hm_sum_s2 >>> 15);
                     output_valid <= 1'b1;
-                    output_addr <= $unsigned(hm_neuron)
-                                 + HIDDEN_SIZE * $unsigned(time_index);
+                    output_addr <= OUTPUT_DATA_ADDR_W'(
+                        $unsigned(hm_neuron)
+                      + HIDDEN_SIZE * $unsigned(time_index));
                     output_data <= saturate16(hm_sum_s2 >>> 15);
 
                     if (hm_neuron == HIDDEN_SIZE-1) begin

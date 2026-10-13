@@ -15,11 +15,9 @@ module tb_eeg_top_4samples;
     logic signed [15:0] input_write_data;
     logic [6:0] class_index;
     logic signed [15:0] winning_logit;
-    logic logit_valid;
-    logic [6:0] logit_index;
-    logic signed [15:0] logit_data;
-    logic [6:0] logit_read_addr;
-    logic signed [15:0] logit_read_data;
+    wire logit_valid;
+    wire [6:0] logit_index;
+    wire signed [15:0] logit_data;
 
     logic signed [15:0] input_mem [0:SAMPLES*INPUT_SIZE-1];
     logic signed [15:0] golden_mem [0:SAMPLES*OUTPUT_SIZE-1];
@@ -27,7 +25,6 @@ module tb_eeg_top_4samples;
     integer sample, i, difference;
     integer current_sample;
     integer stream_checked, stream_errors, stream_max_diff;
-    integer ram_checked, ram_errors, ram_max_diff;
     integer prediction_matches;
     integer expected_index;
     logic signed [15:0] expected_max;
@@ -35,41 +32,42 @@ module tb_eeg_top_4samples;
     eeg_top #(
         // Every sample is loaded explicitly, so no input RAM init file is used.
         .INPUT_FILE(""),
-        .CONV1_W_FILE("../mem/weights/conv1_W.mem"),
-        .CONV1_B_FILE("../mem/weights/conv1_b.mem"),
-        .CONV1_PACKED_W_FILE("../mem/weights/conv1_W_x3.mem"),
-        .CONV1_PACKED_B_FILE("../mem/weights/conv1_b_x3.mem"),
-        .BN1_A_FILE("../mem/weights/bn1_A.mem"),
-        .BN1_B_FILE("../mem/weights/bn1_B.mem"),
-        .CONV2_W_FILE("../mem/weights/conv2_W.mem"),
-        .CONV2_B_FILE("../mem/weights/conv2_b.mem"),
-        .CONV2_PACKED_W_FILE("../mem/weights/conv2_W_x5.mem"),
-        .CONV2_KH2_PACKED_W_FILE("../mem/weights/conv2_W_x5_kh2.mem"),
-        .CONV2_PACKED_B_FILE("../mem/weights/conv2_b_x5.mem"),
-        .BN2_A_FILE("../mem/weights/bn2_A.mem"),
-        .BN2_B_FILE("../mem/weights/bn2_B.mem"),
-        .CONV3_W_FILE("../mem/weights/conv3_W.mem"),
-        .CONV3_B_FILE("../mem/weights/conv3_b.mem"),
-        .CONV3_PACKED_W_FILE("../mem/weights/conv3_W_x3.mem"),
-        .CONV3_PACKED_B_FILE("../mem/weights/conv3_b_x3.mem"),
-        .BN3_A_FILE("../mem/weights/bn3_A.mem"),
-        .BN3_B_FILE("../mem/weights/bn3_B.mem"),
-        .GRU_WR_FILE("../mem/weights/gru_Wr.mem"),
-        .GRU_WZ_FILE("../mem/weights/gru_Wz.mem"),
-        .GRU_WH_FILE("../mem/weights/gru_Wh.mem"),
-        .GRU_UR_FILE("../mem/weights/gru_Ur.mem"),
-        .GRU_UZ_FILE("../mem/weights/gru_Uz.mem"),
-        .GRU_UH_FILE("../mem/weights/gru_Uh.mem"),
-        .GRU_BR_FILE("../mem/weights/gru_br.mem"),
-        .GRU_BZ_FILE("../mem/weights/gru_bz.mem"),
-        .GRU_BH_FILE("../mem/weights/gru_bh.mem"),
+        .INPUT_EVEN_FILE(""),
+        .INPUT_ODD_FILE(""),
+        .CONV1_DW_W_FILE("../mem/dsconv1_dsconv2/weights/conv1_depthwise_W_kh2.mem"),
+        .CONV1_DW_B_FILE("../mem/dsconv1_dsconv2/weights/conv1_depthwise_b.mem"),
+        .CONV1_PW_W_FILE("../mem/dsconv1_dsconv2/weights/conv1_pointwise_W_x3.mem"),
+        .CONV1_PW_B_FILE("../mem/dsconv1_dsconv2/weights/conv1_pointwise_b_x3.mem"),
+        .BN1_A_FILE("../mem/dsconv1_dsconv2/weights/bn1_A.mem"),
+        .BN1_B_FILE("../mem/dsconv1_dsconv2/weights/bn1_B.mem"),
+        .CONV2_DW_W_FILE("../mem/dsconv1_dsconv2/weights/conv2_depthwise_W_kh2.mem"),
+        .CONV2_DW_B_FILE("../mem/dsconv1_dsconv2/weights/conv2_depthwise_b.mem"),
+        .CONV2_PW_W_FILE("../mem/dsconv1_dsconv2/weights/conv2_pointwise_W_x5.mem"),
+        .CONV2_PW_B_FILE("../mem/dsconv1_dsconv2/weights/conv2_pointwise_b_x5.mem"),
+        .BN2_A_FILE("../mem/dsconv1_dsconv2/weights/bn2_A.mem"),
+        .BN2_B_FILE("../mem/dsconv1_dsconv2/weights/bn2_B.mem"),
+        .CONV3_W_FILE("../mem/dsconv1_dsconv2/weights/conv3_W.mem"),
+        .CONV3_B_FILE("../mem/dsconv1_dsconv2/weights/conv3_b.mem"),
+        .CONV3_PACKED_W_FILE("../mem/dsconv1_dsconv2/weights/conv3_W_x3.mem"),
+        .CONV3_PACKED_B_FILE("../mem/dsconv1_dsconv2/weights/conv3_b_x3.mem"),
+        .BN3_A_FILE("../mem/dsconv1_dsconv2/weights/bn3_A.mem"),
+        .BN3_B_FILE("../mem/dsconv1_dsconv2/weights/bn3_B.mem"),
+        .GRU_WR_FILE("../mem/dsconv1_dsconv2/weights/gru_Wr.mem"),
+        .GRU_WZ_FILE("../mem/dsconv1_dsconv2/weights/gru_Wz.mem"),
+        .GRU_WH_FILE("../mem/dsconv1_dsconv2/weights/gru_Wh.mem"),
+        .GRU_UR_FILE("../mem/dsconv1_dsconv2/weights/gru_Ur.mem"),
+        .GRU_UZ_FILE("../mem/dsconv1_dsconv2/weights/gru_Uz.mem"),
+        .GRU_UH_FILE("../mem/dsconv1_dsconv2/weights/gru_Uh.mem"),
+        .GRU_BR_FILE("../mem/dsconv1_dsconv2/weights/gru_br.mem"),
+        .GRU_BZ_FILE("../mem/dsconv1_dsconv2/weights/gru_bz.mem"),
+        .GRU_BH_FILE("../mem/dsconv1_dsconv2/weights/gru_bh.mem"),
         .ACTIVATION_LUT_FILE("../mem/lut/gru_activation_lut_q15.mem"),
-        .FC1_W_FILE("../mem/weights/fc_1_W.mem"),
-        .FC1_B_FILE("../mem/weights/fc_1_b.mem"),
-        .FC_BN_A_FILE("../mem/weights/bn_2_A.mem"),
-        .FC_BN_B_FILE("../mem/weights/bn_2_B.mem"),
-        .FC_OUT_W_FILE("../mem/weights/fc_out_W.mem"),
-        .FC_OUT_B_FILE("../mem/weights/fc_out_b.mem")
+        .FC1_W_FILE("../mem/dsconv1_dsconv2/weights/fc_1_W.mem"),
+        .FC1_B_FILE("../mem/dsconv1_dsconv2/weights/fc_1_b.mem"),
+        .FC_BN_A_FILE("../mem/dsconv1_dsconv2/weights/bn_2_A.mem"),
+        .FC_BN_B_FILE("../mem/dsconv1_dsconv2/weights/bn_2_B.mem"),
+        .FC_OUT_W_FILE("../mem/dsconv1_dsconv2/weights/fc_out_W.mem"),
+        .FC_OUT_B_FILE("../mem/dsconv1_dsconv2/weights/fc_out_b.mem")
     ) dut (
         .clk(clk), .rst_n(rst_n), .start(start),
         .busy(busy), .done(done),
@@ -77,12 +75,12 @@ module tb_eeg_top_4samples;
         .input_write_addr(input_write_addr),
         .input_write_data(input_write_data),
         .input_ready(input_ready),
-        .class_index(class_index), .winning_logit(winning_logit),
-        .logit_valid(logit_valid), .logit_index(logit_index),
-        .logit_data(logit_data),
-        .logit_read_addr(logit_read_addr),
-        .logit_read_data(logit_read_data)
+        .class_index(class_index), .winning_logit(winning_logit)
     );
+
+    assign logit_valid = dut.fc_out_output_valid;
+    assign logit_index = dut.fc_out_output_addr;
+    assign logit_data = dut.fc_out_output_data;
 
     always #5 clk = ~clk;
 
@@ -142,8 +140,8 @@ module tb_eeg_top_4samples;
     endtask
 
     initial begin
-        $readmemh("../mem/golden/q_in_act.mem", input_mem);
-        $readmemh("../mem/golden/q_fc_out_act.mem", golden_mem);
+        $readmemh("../mem/dsconv1_dsconv2/golden/q_in_act.mem", input_mem);
+        $readmemh("../mem/dsconv1_dsconv2/golden/q_fc_out_act.mem", golden_mem);
 
         clk = 1'b0;
         rst_n = 1'b0;
@@ -151,7 +149,6 @@ module tb_eeg_top_4samples;
         input_write_en = 1'b0;
         input_write_addr = '0;
         input_write_data = '0;
-        logit_read_addr = '0;
         current_sample = 0;
         prediction_matches = 0;
 
@@ -164,9 +161,6 @@ module tb_eeg_top_4samples;
             stream_checked = 0;
             stream_errors = 0;
             stream_max_diff = 0;
-            ram_checked = 0;
-            ram_errors = 0;
-            ram_max_diff = 0;
             find_expected_class(sample);
 
             $display("Loading sample %0d...", sample);
@@ -175,37 +169,20 @@ module tb_eeg_top_4samples;
             wait (done === 1'b1);
             #1;
 
-            for (i = 0; i < OUTPUT_SIZE; i = i + 1) begin
-                @(negedge clk);
-                logit_read_addr = i[6:0];
-                @(posedge clk);
-                #1;
-                difference = abs_diff(
-                    logit_read_data,
-                    golden_mem[sample*OUTPUT_SIZE+i]
-                );
-                if (difference > ram_max_diff)
-                    ram_max_diff = difference;
-                if (difference > LOGIT_TOLERANCE)
-                    ram_errors = ram_errors + 1;
-                ram_checked = ram_checked + 1;
-            end
-
             if (class_index == expected_index[6:0])
                 prediction_matches = prediction_matches + 1;
 
             if ((stream_checked == OUTPUT_SIZE) &&
-                (ram_checked == OUTPUT_SIZE) &&
-                (stream_errors == 0) && (ram_errors == 0) &&
+                (stream_errors == 0) &&
                 (class_index == expected_index[6:0])) begin
-                $display("Sample %0d PASS: RTL class=%0d MATLAB class=%0d stream_max_diff=%0d RAM_max_diff=%0d",
+                $display("Sample %0d PASS: RTL class=%0d MATLAB class=%0d stream_max_diff=%0d",
                          sample, class_index, expected_index,
-                         stream_max_diff, ram_max_diff);
+                         stream_max_diff);
             end else begin
-                $display("Sample %0d FAIL: RTL class=%0d MATLAB class=%0d stream=%0d/%0d errors=%0d RAM errors=%0d max_diff=%0d",
+                $display("Sample %0d FAIL: RTL class=%0d MATLAB class=%0d stream=%0d/%0d errors=%0d max_diff=%0d",
                          sample, class_index, expected_index,
                          stream_checked, OUTPUT_SIZE, stream_errors,
-                         ram_errors, stream_max_diff);
+                         stream_max_diff);
                 $fatal(1);
             end
 

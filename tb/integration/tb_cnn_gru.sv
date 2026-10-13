@@ -16,9 +16,9 @@ module tb_cnn_gru;
     logic done;
     logic input_ready;
     logic output_valid;
-    logic [31:0] output_addr;
+    logic [7:0] output_addr;
     logic signed [15:0] output_data;
-    logic [15:0] result_read_addr;
+    logic [12:0] result_read_addr;
     logic signed [15:0] result_read_data;
     logic signed [15:0] expected_mem [0:SAMPLES*OUTPUT_SIZE-1];
 
@@ -140,7 +140,7 @@ module tb_cnn_gru;
 
         for (i = 0; i < OUTPUT_SIZE; i = i + 1) begin
             @(negedge clk);
-            result_read_addr = i[15:0];
+            result_read_addr = i[12:0];
             @(posedge clk);
             #1;
 

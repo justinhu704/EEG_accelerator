@@ -8,7 +8,8 @@ module tb_fc_out;
     localparam int MAX_CYCLES = 100_000;
 
     logic clk, rst_n, start, busy, done;
-    logic [31:0] input_addr, output_addr;
+    logic [5:0] input_addr;
+    logic [6:0] output_addr;
     logic signed [15:0] input_data, output_data;
     logic output_valid;
     logic signed [15:0] expected [0:SAMPLES*OUTPUT_SIZE-1];
@@ -20,7 +21,7 @@ module tb_fc_out;
         .MEM_FILE("../mem/golden/q_bn_2_act.mem")
     ) u_input_ram (
         .clk(clk), .write_en(1'b0), .write_addr('0), .write_data('0),
-        .read_addr(input_addr[$clog2(SAMPLES*INPUT_SIZE)-1:0]),
+        .read_addr(input_addr),
         .read_data(input_data)
     );
 

@@ -63,18 +63,19 @@ module eeg_top #(
 
     logic signed [15:0] cnn_ram_data;
 
-    logic [31:0] fc1_input_addr, fc1_output_addr;
+    logic [7:0] fc1_input_addr;
+    logic [5:0] fc1_output_addr;
     logic signed [15:0] fc1_output_data;
     logic fc1_output_valid;
     logic fc_relu_valid;
     logic signed [15:0] fc_relu_data;
     logic fc_bn_valid;
     logic signed [15:0] fc_bn_data;
-    logic [31:0] fc_addr_d1, fc_addr_d2;
+    logic [5:0] fc_addr_d1, fc_addr_d2;
     logic fc_addr_valid_d1;
     logic fc1_bn_done;
 
-    logic [6:0] fc_out_output_addr;
+    logic [6:0] fc_out_output_addr;  // Max 104
     logic signed [15:0] fc_out_output_data;
     logic fc_out_output_valid;
 
@@ -119,7 +120,7 @@ module eeg_top #(
         .input_ready(cnn_input_ready),
         .output_valid(), .output_addr(), .output_data(),
         .result_read_en(fc1_start || fc1_busy),
-        .result_read_addr(fc1_input_addr[15:0]),
+        .result_read_addr({5'd0, fc1_input_addr}),
         .result_read_data(cnn_ram_data)
     );
 
@@ -151,7 +152,7 @@ module eeg_top #(
     ) u_fc_bn (
         .clk(clk), .rst_n(rst_n),
         .in_valid(fc_relu_valid), .in_data(fc_relu_data),
-        .in_ch_idx(fc1_output_addr),
+        .in_ch_idx({26'd0, fc1_output_addr}),
         .out_valid(fc_bn_valid), .out_data(fc_bn_data)
     );
 
@@ -170,7 +171,7 @@ module eeg_top #(
         end
     end
 
-    assign fc1_bn_done = fc_bn_valid && (fc_addr_d2 == 32'd39);
+    assign fc1_bn_done = fc_bn_valid && (fc_addr_d2 == 6'd39);
 
     // 以 streaming 計算 FC_out
     // FC1 大約 162 個 cycle 產生一個 result，因此可在下一 BN 數值到來前更新 105 類別累加器
@@ -181,7 +182,7 @@ module eeg_top #(
     ) u_fc_out (
         .clk(clk), .rst_n(rst_n), .start(fc1_start),
         .busy(), .done(),
-        .input_valid(fc_bn_valid), .input_index(fc_addr_d2[5:0]),
+        .input_valid(fc_bn_valid), .input_index(fc_addr_d2),
         .input_data(fc_bn_data),
         .output_valid(fc_out_output_valid),
         .output_addr(fc_out_output_addr), .output_data(fc_out_output_data)

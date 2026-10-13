@@ -8,6 +8,8 @@ module fc_engine #(
     parameter int OUTPUT_SIZE = 40,
     parameter int BIAS_SHIFT  = 16,
     parameter int OUTPUT_SHIFT = 17,
+    parameter int INPUT_ADDR_W = (INPUT_SIZE <= 1) ? 1 : $clog2(INPUT_SIZE),
+    parameter int OUTPUT_ADDR_W = (OUTPUT_SIZE <= 1) ? 1 : $clog2(OUTPUT_SIZE),
     parameter WEIGHT_FILE = "mem/weights/fc_1_W.mem",
     parameter BIAS_FILE   = "mem/weights/fc_1_b.mem"
 ) (
@@ -17,11 +19,11 @@ module fc_engine #(
     output logic               busy,
     output logic               done,
 
-    output logic [31:0]        input_addr,
+    output logic [INPUT_ADDR_W-1:0] input_addr,
     input  logic signed [15:0] input_data,
 
     output logic               output_valid,
-    output logic [31:0]        output_addr,
+    output logic [OUTPUT_ADDR_W-1:0] output_addr,
     output logic signed [15:0] output_data
 );
     localparam int WEIGHT_DEPTH = INPUT_SIZE * OUTPUT_SIZE;
@@ -41,8 +43,8 @@ module fc_engine #(
     } state_t;
     state_t state;
 
-    integer input_index;
-    integer output_index;
+    logic [INPUT_ADDR_W-1:0] input_index;
+    logic [OUTPUT_ADDR_W-1:0] output_index;
     logic data_valid;
     logic data_valid_d;
     logic clear_acc;
@@ -51,7 +53,7 @@ module fc_engine #(
     logic signed [15:0] input_data_d;
     logic signed [15:0] weight_data_d;
 
-    logic [31:0] weight_addr_full;
+    logic [WEIGHT_ADDR_W-1:0] weight_addr_full;
     logic signed [15:0] weight_data;
     logic signed [15:0] bias_data;
     logic signed [47:0] accumulator;
@@ -63,7 +65,8 @@ module fc_engine #(
 
     always_comb begin
         input_addr = input_index;
-        weight_addr_full = output_index + OUTPUT_SIZE * input_index;
+        weight_addr_full = WEIGHT_ADDR_W'(
+            output_index + OUTPUT_SIZE * input_index);
         output_addr = output_index;
 
         busy = (state != S_IDLE) && (state != S_DONE);
@@ -81,7 +84,7 @@ module fc_engine #(
     ) u_weight_rom (
         .clk(clk),
         .read_en(start || busy),
-        .addr(weight_addr_full[WEIGHT_ADDR_W-1:0]),
+        .addr(weight_addr_full),
         .data(weight_data)
     );
 
@@ -162,7 +165,7 @@ module fc_engine #(
                     if (input_index == INPUT_SIZE-1)
                         state <= S_DRAIN;
                     else
-                        input_index <= input_index + 1;
+                        input_index <= input_index + 1'b1;
                 end
 
                 // 累積最後一個輸入地址返回的值。
@@ -178,7 +181,7 @@ module fc_engine #(
                     if (output_index == OUTPUT_SIZE-1)
                         state <= S_DONE;
                     else begin
-                        output_index <= output_index + 1;
+                        output_index <= output_index + 1'b1;
                         state <= S_CLEAR;
                     end
                 end
