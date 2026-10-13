@@ -54,14 +54,14 @@ module fc_out_streaming #(
     // Accumulator RAM：取代 105 組 register 與大型動態索引 mux
     // ---------------------------------------------------------------------
     (* ramstyle = "M10K, no_rw_check" *)
-    logic signed [47:0] accumulator_ram [0:OUTPUT_SIZE-1];
+    logic signed [39:0] accumulator_ram [0:OUTPUT_SIZE-1];
 
     logic                       accumulator_read_enable;
     logic [OUTPUT_INDEX_W-1:0]  accumulator_read_addr;
-    logic signed [47:0]         accumulator_read_data;
+    logic signed [39:0]         accumulator_read_data;
     logic                       accumulator_write_enable;
     logic [OUTPUT_INDEX_W-1:0]  accumulator_write_addr;
-    logic signed [47:0]         accumulator_write_data;
+    logic signed [39:0]         accumulator_write_data;
 
     // 單讀單寫同步RAM，可由Quartus推導成M10K。
     always_ff @(posedge clk) begin
@@ -92,8 +92,8 @@ module fc_out_streaming #(
     logic                      mac_first_input_d2;
     logic                      mac_valid_d2;
     logic signed [31:0]        product_d2;
-    logic signed [47:0]        accumulator_old_d2;
-    logic signed [47:0]        product_extended;
+    logic signed [39:0]        accumulator_old_d2;
+    logic signed [39:0]        product_extended;
 
     weight_rom #(
         .DATA_W(16), .DEPTH(WEIGHT_DEPTH), .ADDR_W(WEIGHT_ADDR_W),
@@ -106,7 +106,7 @@ module fc_out_streaming #(
     );
 
     always_comb begin
-        product_extended = {{16{product_d2[31]}}, product_d2};
+        product_extended = {{8{product_d2[31]}}, product_d2};
 
         accumulator_write_enable = mac_valid_d2;
         accumulator_write_addr = mac_index_d2;
@@ -127,14 +127,14 @@ module fc_out_streaming #(
     logic                      output_valid_d1;
     logic [OUTPUT_INDEX_W-1:0] output_index_d2;
     logic                      output_valid_d2;
-    logic signed [47:0]        output_sum_d2;
+    logic signed [39:0]        output_sum_d2;
     logic [OUTPUT_INDEX_W-1:0] output_index_d3;
     logic                      output_valid_d3;
-    logic signed [47:0]        scaled_result_d3;
+    logic signed [39:0]        scaled_result_d3;
 
     logic signed [15:0] bias_data;
-    logic signed [47:0] bias_extended;
-    logic signed [47:0] bias_aligned;
+    logic signed [39:0] bias_extended;
+    logic signed [39:0] bias_aligned;
     logic signed [15:0] saturated_result;
 
     weight_rom #(
@@ -153,7 +153,7 @@ module fc_out_streaming #(
     );
 
     always_comb begin
-        bias_extended = {{32{bias_data[15]}}, bias_data};
+        bias_extended = {{24{bias_data[15]}}, bias_data};
         bias_aligned = bias_extended <<< BIAS_SHIFT;
 
         // MAC與輸出共用Accumulator RAM的同步讀取port。
