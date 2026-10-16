@@ -33,6 +33,9 @@ module dsconv_streaming_pool #(
     localparam int MAX_ADDR_W = (MAX_DEPTH <= 1) ? 1 : $clog2(MAX_DEPTH);
     localparam int WINDOW_W   = (OUT_W + 1 <= 1) ? 1 : $clog2(OUT_W + 1);
     localparam int STRIDE_W_W = (STRIDE_W <= 1) ? 1 : $clog2(STRIDE_W);
+    localparam int SCALE_LEFT_SHIFT = (OUTPUT_F > INPUT_F)
+                                    ? (OUTPUT_F - INPUT_F) : 0;
+    localparam int SCALE_W = 17 + SCALE_LEFT_SHIFT;
 
     logic active;
     logic draining;
@@ -67,12 +70,11 @@ module dsconv_streaming_pool #(
     logic current_window_is_odd;
     logic [WINDOW_W-1:0] previous_window;
     logic end_of_width;
-    logic [31:0] max_read_addr_full;
-    logic [31:0] stage1_output_addr_full;
+    logic [12:0] stage1_output_addr_full;
 
     logic signed [15:0] completed_max;
-    logic signed [47:0] completed_extended;
-    logic signed [47:0] completed_scaled;
+    logic signed [SCALE_W-1:0] completed_extended;
+    logic signed [SCALE_W-1:0] completed_scaled;
     logic signed [15:0] completed_saturated;
 
     function automatic logic signed [15:0] max16(
@@ -84,8 +86,8 @@ module dsconv_streaming_pool #(
 
     always_comb begin
         busy = active;
-        max_read_addr_full = input_h * IN_CH + input_channel;
-        max_read_addr = max_read_addr_full[MAX_ADDR_W-1:0];
+        max_read_addr = MAX_ADDR_W'(
+            $unsigned(input_h) * IN_CH + $unsigned(input_channel));
 
         current_window_valid = (current_window < OUT_W);
 
@@ -145,14 +147,15 @@ module dsconv_streaming_pool #(
         else
             completed_max = max16(stage1_data, max_even_read_data);
 
-        completed_extended = {{32{completed_max[15]}}, completed_max};
+        completed_extended = {{(SCALE_W-16){completed_max[15]}},
+                              completed_max};
         if (OUTPUT_F >= INPUT_F)
             completed_scaled = completed_extended <<< (OUTPUT_F - INPUT_F);
         else
             completed_scaled = completed_extended >>> (INPUT_F - OUTPUT_F);
     end
 
-    sat16 u_output_sat16 (
+    sat16 #(.INPUT_W(SCALE_W)) u_output_sat16 (
         .value_in(completed_scaled),
         .value_out(completed_saturated)
     );
@@ -238,7 +241,7 @@ module dsconv_streaming_pool #(
                     stage1_previous_window_ends <= previous_window_ends;
                     stage1_current_window_is_odd <= current_window_is_odd;
                     stage1_first_value <= (stride_phase == 0);
-                    stage1_output_addr <= stage1_output_addr_full[12:0];
+                    stage1_output_addr <= stage1_output_addr_full;
 
                     // width 只在完整接收該欄的所有 height/channel 後推進。
                     if (end_of_width) begin

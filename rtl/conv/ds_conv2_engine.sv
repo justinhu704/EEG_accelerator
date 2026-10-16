@@ -113,9 +113,15 @@ module ds_conv2_engine #(
     logic [CH_W-1:0] pw_pending_channel;
     logic signed [DATA_WIDTH-1:0] pw_pending_activation;
 
-    logic [31:0] dw_weight_addr_full;
-    logic [31:0] pw_weight_addr_full;
-    logic [31:0] output_channel_full;
+    localparam integer DW_WEIGHT_ADDR_W = (IN_CH*K_W > 1)
+                                              ? $clog2(IN_CH*K_W) : 1;
+    localparam integer PW_WEIGHT_ADDR_W = (IN_CH*OUT_GROUPS > 1)
+                                              ? $clog2(IN_CH*OUT_GROUPS) : 1;
+    localparam integer OUTPUT_CHANNEL_W = (OUT_CH > 1)
+                                              ? $clog2(OUT_CH) : 1;
+    logic [DW_WEIGHT_ADDR_W-1:0] dw_weight_addr_full;
+    logic [PW_WEIGHT_ADDR_W-1:0] pw_weight_addr_full;
+    logic [OUTPUT_CHANNEL_W-1:0] output_channel_full;
 
     assign busy = (state != S_IDLE) || output_active
                 || (result_bank_valid != 2'b00);

@@ -137,6 +137,9 @@ module fc_out_streaming #(
     logic signed [39:0] bias_aligned;
     logic signed [15:0] saturated_result;
 
+    // ---------------------------------------------------------------------
+    // Bias ROM
+    // ---------------------------------------------------------------------
     weight_rom #(
         .DATA_W(16), .DEPTH(OUTPUT_SIZE), .ADDR_W(BIAS_ADDR_W),
         .MEM_FILE(BIAS_FILE), .USE_READ_ENABLE(1'b1)
@@ -200,11 +203,14 @@ module fc_out_streaming #(
             output_data <= '0;
         // IDLE等待期間保持FC-out pipeline與Accumulator RAM。
         end else if ((state != S_IDLE) || start) begin
+            // 控制訊號
             mac_valid_d1 <= (state == S_MAC);
             mac_valid_d2 <= mac_valid_d1;
+            // 依序傳遞
             output_valid_d1 <= (state == S_OUTPUT);
             output_valid_d2 <= output_valid_d1;
             output_valid_d3 <= output_valid_d2;
+            // 輸出訊號
             output_valid <= 1'b0;
 
             // Weight ROM與Accumulator RAM均為同步讀取。
@@ -251,7 +257,7 @@ module fc_out_streaming #(
                     if (input_valid) begin
                         current_input <= input_data;
                         current_input_index <= input_index;
-                        mac_issue_index <= '0;
+                        mac_issue_index <= '0; // 從 class 0 開始
                         state <= S_MAC;
                     end
                 end

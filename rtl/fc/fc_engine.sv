@@ -31,6 +31,7 @@ module fc_engine #(
                                    ? 1 : $clog2(WEIGHT_DEPTH);
     localparam int BIAS_ADDR_W = (OUTPUT_SIZE <= 1)
                                  ? 1 : $clog2(OUTPUT_SIZE);
+    localparam int MAC_ACC_W = 39;
 
     typedef enum logic [2:0] {
         S_IDLE,
@@ -56,7 +57,7 @@ module fc_engine #(
     logic [WEIGHT_ADDR_W-1:0] weight_addr_full;
     logic signed [15:0] weight_data;
     logic signed [15:0] bias_data;
-    logic signed [47:0] accumulator;
+    logic signed [MAC_ACC_W-1:0] accumulator;
     logic signed [47:0] bias_extended;
     logic signed [47:0] bias_aligned;
     logic signed [47:0] sum_with_bias;
@@ -101,7 +102,7 @@ module fc_engine #(
         .data(bias_data)
     );
 
-    pe_mac u_mac (
+    pe_mac #(.ACC_W(MAC_ACC_W)) u_mac (
         .clk(clk), .rst_n(rst_n),
         .clear_acc(clear_acc),
         .mac_en(data_valid_d),
@@ -114,7 +115,8 @@ module fc_engine #(
     always_comb begin
         bias_extended = {{32{bias_data[15]}}, bias_data};
         bias_aligned = bias_extended <<< BIAS_SHIFT;
-        sum_with_bias = accumulator + bias_aligned;
+        sum_with_bias = {{(48-MAC_ACC_W){accumulator[MAC_ACC_W-1]}},
+                         accumulator} + bias_aligned;
         scaled_result = sum_with_bias >>> OUTPUT_SHIFT;
     end
 

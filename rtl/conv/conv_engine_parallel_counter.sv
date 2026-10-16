@@ -12,7 +12,19 @@ module conv_engine_parallel_counter #(
     parameter int LANES  = 4,
     parameter int BIAS_SHIFT   = 10,
     parameter int OUTPUT_SHIFT = 15,
-    parameter bit REGISTER_MAC_INPUTS = 1'b0
+    parameter bit REGISTER_MAC_INPUTS = 1'b0,
+    parameter int INPUT_ADDR_WIDTH = ((IN_H * IN_W * IN_CH) <= 1)
+                                   ? 1 : $clog2(IN_H * IN_W * IN_CH),
+    parameter int INPUT_W_WIDTH = (IN_W <= 1) ? 1 : $clog2(IN_W),
+    parameter int WEIGHT_ADDR_WIDTH = ((K_H * K_W * IN_CH
+                                      * ((OUT_CH + LANES - 1) / LANES)) <= 1)
+                                    ? 1 : $clog2(K_H * K_W * IN_CH
+                                      * ((OUT_CH + LANES - 1) / LANES)),
+    parameter int BIAS_ADDR_WIDTH = (((OUT_CH + LANES - 1) / LANES) <= 1)
+                                  ? 1 : $clog2((OUT_CH + LANES - 1) / LANES),
+    parameter int OUTPUT_ADDR_WIDTH = ((OUT_H * OUT_W * OUT_CH) <= 1)
+                                    ? 1 : $clog2(OUT_H * OUT_W * OUT_CH),
+    parameter int OUTPUT_CH_WIDTH = (OUT_CH <= 1) ? 1 : $clog2(OUT_CH)
 ) (
     input  logic                         clk,
     input  logic                         rst_n,
@@ -20,19 +32,19 @@ module conv_engine_parallel_counter #(
     output logic                         busy,
     output logic                         done,
 
-    output logic [31:0]                  input_addr,
-    output logic [31:0]                  input_required_w,
+    output logic [INPUT_ADDR_WIDTH-1:0]  input_addr,
+    output logic [INPUT_W_WIDTH-1:0]     input_required_w,
     input  logic                         input_ready,
     input  logic signed [15:0]           input_data,
 
-    output logic [31:0]                  weight_addr,
+    output logic [WEIGHT_ADDR_WIDTH-1:0] weight_addr,
     input  logic signed [(16*LANES)-1:0] weight_data,
-    output logic [31:0]                  bias_addr,
+    output logic [BIAS_ADDR_WIDTH-1:0]   bias_addr,
     input  logic signed [(16*LANES)-1:0] bias_data,
 
     output logic                         output_valid,
-    output logic [31:0]                  output_addr,
-    output logic [31:0]                  output_ch_idx,
+    output logic [OUTPUT_ADDR_WIDTH-1:0] output_addr,
+    output logic [OUTPUT_CH_WIDTH-1:0]   output_ch_idx,
     output logic signed [15:0]           output_data
 );
     localparam int OUT_GROUPS = (OUT_CH + LANES - 1) / LANES;
@@ -50,10 +62,9 @@ module conv_engine_parallel_counter #(
     localparam int LANE_W = (LANES <= 1) ? 1 : $clog2(LANES);
     localparam int OUTPUT_CHANNEL_W = ((OUT_GROUPS * LANES) <= 1)
                                     ? 1 : $clog2(OUT_GROUPS * LANES);
-    localparam int INPUT_ADDR_W = (INPUT_DEPTH <= 1)
-                                ? 1 : $clog2(INPUT_DEPTH);
-    localparam int WEIGHT_ADDR_W = (PACKED_WEIGHT_DEPTH <= 1)
-                                 ? 1 : $clog2(PACKED_WEIGHT_DEPTH);
+    localparam int INPUT_ADDR_W = INPUT_ADDR_WIDTH;
+    localparam int WEIGHT_ADDR_W = WEIGHT_ADDR_WIDTH;
+    localparam int MAC_ACC_W = 39;
 
     // Constant input-address strides for the current loop order:
     // kh (fastest) -> kw -> input channel.
@@ -106,9 +117,9 @@ module conv_engine_parallel_counter #(
 
     logic signed [15:0] weight_lane [0:LANES-1];
     logic signed [15:0] bias_lane [0:LANES-1];
-    logic signed [47:0] accumulators [0:LANES-1];
+    logic signed [MAC_ACC_W-1:0] accumulators [0:LANES-1];
 
-    logic signed [47:0] selected_accumulator;
+    logic signed [MAC_ACC_W-1:0] selected_accumulator;
     logic signed [15:0] selected_bias;
     logic signed [47:0] bias_extended;
     logic signed [47:0] bias_aligned;
@@ -123,7 +134,7 @@ module conv_engine_parallel_counter #(
             assign weight_lane[lane] = mac_weight_data[(16*lane) +: 16];
             assign bias_lane[lane] = bias_data[(16*lane) +: 16];
 
-            pe_mac u_mac (
+            pe_mac #(.ACC_W(MAC_ACC_W)) u_mac (
                 .clk(clk), .rst_n(rst_n),
                 .clear_acc(clear_acc), .mac_en(mac_en),
                 .data_in(mac_input_data), .weight_in(weight_lane[lane]),
@@ -134,18 +145,14 @@ module conv_engine_parallel_counter #(
 
     always_comb begin
         // input feature map address
-        input_addr = '0;
-        input_addr[INPUT_ADDR_W-1:0] = input_addr_count;
-        input_required_w = {{(32-OUT_W_W){1'b0}}, out_w_count}
-                         + {{(32-K_W_W){1'b0}}, kw_count};
+        input_addr = input_addr_count;
+        input_required_w = out_w_count + kw_count;
 
         // weight address
-        weight_addr = '0;
-        weight_addr[WEIGHT_ADDR_W-1:0] = weight_addr_count;
+        weight_addr = weight_addr_count;
 
         // include LANES lane data
-        bias_addr = '0;
-        bias_addr[OUT_GROUP_W-1:0] = out_group_count;
+        bias_addr = out_group_count;
 
         output_channel = out_group_count * LANES + output_lane_count;
         lane_is_valid = (output_channel < OUT_CH);
@@ -171,7 +178,8 @@ module conv_engine_parallel_counter #(
         bias_aligned = bias_extended <<< BIAS_SHIFT;
 
         // 加上 bias
-        sum_with_bias = selected_accumulator + bias_aligned;
+        sum_with_bias = {{(48-MAC_ACC_W){selected_accumulator[MAC_ACC_W-1]}},
+                         selected_accumulator} + bias_aligned;
         // 進行 scaling
         scaled_result = sum_with_bias >>> OUTPUT_SHIFT;
         output_data = output_valid ? saturated_result : 16'sd0;

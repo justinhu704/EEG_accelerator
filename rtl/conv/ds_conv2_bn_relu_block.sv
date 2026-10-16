@@ -14,6 +14,8 @@ module ds_conv2_bn_relu_block #(
     parameter int BN_BIAS_SHIFT = 10,
     parameter int BN_OUTPUT_SHIFT = 13,
     parameter int RELU_LEFT_SHIFT = 0,
+    parameter int INPUT_ADDR_WIDTH = 32,
+    parameter int OUTPUT_ADDR_WIDTH = 32,
     parameter DW_WEIGHT_FILE = "mem/dsconv2/weights/conv2_depthwise_W_kh2.mem",
     parameter DW_BIAS_FILE = "mem/dsconv2/weights/conv2_depthwise_b.mem",
     parameter PW_WEIGHT_FILE = "mem/dsconv2/weights/conv2_pointwise_W_x5.mem",
@@ -24,10 +26,10 @@ module ds_conv2_bn_relu_block #(
     input  logic clk,
     input  logic rst_n,
     input  logic start,
-    input  logic [31:0] input_base_addr,
+    input  logic [INPUT_ADDR_WIDTH-1:0] input_base_addr,
     output logic busy,
-    output logic [31:0] input_addr_kh0,
-    output logic [31:0] input_addr_kh1,
+    output logic [INPUT_ADDR_WIDTH-1:0] input_addr_kh0,
+    output logic [INPUT_ADDR_WIDTH-1:0] input_addr_kh1,
     output logic [((IN_H-K_H+1) > 1 ? $clog2(IN_H-K_H+1) : 1)-1:0] input_issue_h,
     output logic [((K_W > 1) ? $clog2(K_W) : 1)-1:0] input_issue_kw,
     output logic [((IN_CH > 1) ? $clog2(IN_CH) : 1)-1:0] input_issue_channel,
@@ -35,7 +37,7 @@ module ds_conv2_bn_relu_block #(
     input  logic signed [15:0] input_data_kh1,
     output logic output_valid,
     output logic output_last,
-    output logic [31:0] output_addr,
+    output logic [OUTPUT_ADDR_WIDTH-1:0] output_addr,
     output logic [((IN_H-K_H+1) > 1 ? $clog2(IN_H-K_H+1) : 1)-1:0] output_h,
     output logic [((IN_W-K_W+1) > 1 ? $clog2(IN_W-K_W+1) : 1)-1:0] output_w,
     output logic [$clog2(OUT_CH)-1:0] output_channel,
@@ -57,7 +59,7 @@ module ds_conv2_bn_relu_block #(
     logic signed [(16*LANES)-1:0] pw_bias_data;
 
     logic conv_valid, conv_last;
-    logic [31:0] conv_addr;
+    logic [OUTPUT_ADDR_WIDTH-1:0] conv_addr;
     logic [((OUT_H > 1) ? $clog2(OUT_H) : 1)-1:0] conv_h;
     logic [((OUT_W > 1) ? $clog2(OUT_W) : 1)-1:0] conv_w;
     logic [$clog2(OUT_CH)-1:0] conv_channel;
@@ -66,7 +68,7 @@ module ds_conv2_bn_relu_block #(
     logic bn_valid, relu_valid;
     logic signed [15:0] bn_data, relu_data;
     logic metadata_valid_d1;
-    logic [31:0] addr_d1, addr_d2;
+    logic [OUTPUT_ADDR_WIDTH-1:0] addr_d1, addr_d2;
     logic [((OUT_H > 1) ? $clog2(OUT_H) : 1)-1:0] h_d1, h_d2;
     logic [((OUT_W > 1) ? $clog2(OUT_W) : 1)-1:0] w_d1, w_d2;
     logic [$clog2(OUT_CH)-1:0] channel_d1, channel_d2;
@@ -108,7 +110,8 @@ module ds_conv2_bn_relu_block #(
     );
 
     ds_conv2_engine #(
-        .INPUT_ADDR_WIDTH(32), .OUTPUT_ADDR_WIDTH(32),
+        .INPUT_ADDR_WIDTH(INPUT_ADDR_WIDTH),
+        .OUTPUT_ADDR_WIDTH(OUTPUT_ADDR_WIDTH),
         .IN_H(IN_H), .IN_W(IN_W), .IN_CH(IN_CH),
         .K_H(K_H), .K_W(K_W), .OUT_CH(OUT_CH), .LANES(LANES),
         .DW_BIAS_SHIFT(DW_BIAS_SHIFT),
@@ -143,7 +146,7 @@ module ds_conv2_bn_relu_block #(
     ) u_bn2 (
         .clk(clk), .rst_n(rst_n),
         .in_valid(conv_valid), .in_data(conv_data),
-        .in_ch_idx({{(32-$clog2(OUT_CH)){1'b0}}, conv_channel}),
+        .in_ch_idx(conv_channel),
         .out_valid(bn_valid), .out_data(bn_data)
     );
 

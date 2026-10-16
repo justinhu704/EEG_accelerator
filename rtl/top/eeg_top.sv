@@ -152,7 +152,7 @@ module eeg_top #(
     ) u_fc_bn (
         .clk(clk), .rst_n(rst_n),
         .in_valid(fc_relu_valid), .in_data(fc_relu_data),
-        .in_ch_idx({26'd0, fc1_output_addr}),
+        .in_ch_idx(fc1_output_addr),
         .out_valid(fc_bn_valid), .out_data(fc_bn_data)
     );
 
