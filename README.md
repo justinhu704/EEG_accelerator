@@ -86,61 +86,95 @@ The main memories are:
 
 ## Current RTL Result
 
-The latest complete ModelSim regression uses a 10 ns core-clock test period.
+The reported complete ModelSim regression uses a 10 ns core-clock test period.
 
 | Measurement | Current result |
 |---|---:|
 | Clock used for cycle-to-time conversion | 100 MHz |
 | Complete inference | 556,984 cycles |
 | Calculated inference time | 5.56984 ms |
+| Main model MACs | 2,694,504 MACs |
 | Main model operations | 5,389,008 operations |
 | Effective throughput | 0.968 GOPS |
+| Core inference rate, excluding UART | 179.5 inferences/s |
+| Throughput per DSP block | 0.0346 GOPS/DSP |
 | Produced logits | 105 |
 | Regression prediction | Class 0 |
-| Maximum checked layer difference | 2 LSB |
+| Regression winning logit | 22,397 |
 
 The operation count treats one multiply-accumulate as two operations. Pooling,
-address generation, activation functions, and saturation are not included in
-the GOPS count.
+address generation, activation functions, saturation, and some elementwise
+operations are not included in the GOPS count. These figures describe core
+inference; UART transfer and host overhead are excluded.
 
 Reducing DSConv1 from seven pointwise lanes to three increased the complete
 inference by only 20 cycles because DSConv1 remains hidden behind the slower
 DSConv2 stage. The RTL regression still produces the same class and winning
 logit.
 
-The latest 105-subject UART demonstration produced 101 correct predictions out
-of 105, or 96.19%. This number describes the one-sample-per-subject demo set; it
-is not a replacement for complete test-set accuracy.
+The final accuracy evaluation uses the complete 119,075-sample test set, rather
+than the one-sample-per-subject UART demonstration:
 
-The most recent Quartus Full Compilation for the Cyclone V `5CSEMA5F31C6`
-completed without errors. It was run after the phase-1 GRU multiplier sharing,
-but before the unified GRU activation LUT and the current top-level clock
-configuration. Its post-fit results are:
+| Evaluation | Correct predictions | Accuracy |
+|---|---:|---:|
+| MATLAB floating-point model | — | 96.54% |
+| MATLAB fixed-point model | 114,965 / 119,075 | 96.55% |
+| FPGA hardware | 114,965 / 119,075 | 96.55% |
+| MATLAB fixed-point / FPGA class agreement | All test samples | 100% |
 
-| Post-fit measurement | Current result |
+The following post-fit results for the Cyclone V `5CSEMA5F31C6` are the results
+reported in Sections 5.3 and 5.4 of the
+[project report](https://docs.google.com/document/d/1sEWBq4gSkROigj2ZEsMR7D_hydCRK2R4ZTHnyQXvEkg/edit).
+They describe the 100 MHz PLL implementation, including the shared GRU
+activation LUT. A separate local compilation may produce slightly different
+placement and resource figures.
+
+| Post-fit measurement | Reported result |
 |---|---:|
-| Slow-corner Fmax | 109.37 MHz |
-| Worst 100 MHz setup slack | +0.857 ns |
-| Logic utilization | 4,991 / 32,070 ALMs (16%) |
-| Registers | 7,300 |
-| M10K blocks | 78 / 397 (20%) |
-| Block-memory bits | 457,072 / 4,065,280 (11%) |
-| DSP blocks | 31 / 87 (36%) |
-| GRU DSP blocks | 9 |
+| Fmax | 111.62 MHz |
+| Logic utilization | 4,977 / 32,070 ALMs (approximately 16%) |
+| Registers | 7,064 |
+| M10K blocks | 75 / 397 (19%) |
+| Block-memory bits | 448,040 / 4,065,280 (11%) |
+| DSP blocks | 28 / 87 (32%) |
+| GRU DSP blocks | 6 |
+| PLLs | 1 / 6 |
+| Total pins | 59 / 457 (13%) |
 
-Power Analyzer was not enabled in this compilation, so power must be measured
-separately with the activity-based power flow before reporting a new value.
+GRU multiplier sharing and the activation LUT optimization reduced GRU DSP
+usage from 13 to 6 blocks and total DSP usage from 35 to 28 blocks (20%).
 
-The current RTL additionally packs the reset/update sigmoid and candidate tanh
-tables into one dual-read 256 x 32-bit ROM. An exhaustive ModelSim comparison
-over all signed 16-bit inputs, the 162-output GRU regression, and the complete
-EEG inference regression are bit-exact. Updated DSP, M10K, ALM, and Fmax values
-for this LUT change require the next Quartus Full Compilation and are therefore
-not claimed by the table above.
+The reset/update sigmoid and candidate tanh tables share one dual-read
+256 x 32-bit ROM, using one M10K. An exhaustive ModelSim comparison over all
+signed 16-bit inputs, the 162-output GRU regression, and the complete EEG
+inference regression are bit-exact.
+
+## Power Estimates
+
+The frequency sweep below follows Table 9 of the project report. Latency is
+core inference time. GOPS/W uses total power, while energy per inference in
+the last column uses core dynamic power only. Table entries are reproduced
+as reported.
+
+| Frequency | Inference latency | Core dynamic power | Total power | GOPS/W | Dynamic energy/inference |
+|---|---:|---:|---:|---:|---:|
+| 100 MHz | 5.570 ms | 162.26 mW | 607.12 mW | 1.589 | 0.903 mJ |
+| 50 MHz | 11.140 ms | 74.34 mW | 506.58 mW | 0.955 | 0.828 mJ |
+| 25 MHz | 22.279 ms | 38.17 mW | 465.27 mW | 0.520 | 0.850 mJ |
+| 6 MHz | 92.831 ms | 8.90 mW | 432.20 mW | 0.134 | 0.826 mJ |
+
+These are Quartus Power Analyzer estimates with Low confidence, not measured
+whole-board power. The VCD is generated at `eeg_top`, so UART switching activity
+is not fully covered. The report's abstract and Section 5.5 prose quote
+164.16 mW for core dynamic power; this table uses the 162.26 mW value in Table 9,
+which also matches the saved 100 MHz Power Analyzer report.
+Recalculating the 100 MHz row from 5,389,008 operations, 556,984 cycles, and
+the listed power gives approximately 1.594 GOPS/W and 0.904 mJ of dynamic
+energy per inference; the report lists 1.589 GOPS/W and 0.903 mJ.
 
 ## Clock and UART
 
-The DE1-SoC board provides a physical 50 MHz `CLOCK_50` input. This branch sets
+The DE1-SoC board provides a physical 50 MHz `CLOCK_50` input. The board top sets
 `USE_PLL=1`, and `pll_50_to_100` generates the 100 MHz clock used by the UART
 and complete inference path. Reset remains asserted until the PLL reports that
 the generated clock is locked. The SDC constrains the external oscillator to
@@ -153,6 +187,13 @@ At a 100 MHz core clock, the UART format is 921600 baud, 8 data bits, no
 parity, and 1 stop bit. Multibyte fields are little-endian. The complete packet
 definition is in
 [`docs/uart_protocol.md`](docs/uart_protocol.md).
+
+Each request is 6,730 bytes, including the 6,720-byte EEG payload, and each
+response is 12 bytes. The report estimates about 78.7 ms per sample end to end,
+or 12.7 samples/s, at 100 MHz. This includes serial transfer and core inference;
+actual host-side elapsed time also includes software and USB/driver overhead.
+The dataset's 62.5 ms window stride produces 16 windows/s, so processing every
+continuous window requires a faster host-to-FPGA interface.
 
 ## Hardware and Tools
 
