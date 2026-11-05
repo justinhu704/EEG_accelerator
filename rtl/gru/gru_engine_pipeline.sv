@@ -21,6 +21,10 @@ module gru_engine_pipeline #(
     parameter int INPUT_SIZE  = 15,
     parameter int HIDDEN_SIZE = 9,
     parameter int TIME_STEPS  = 18,
+    parameter int INPUT_DATA_ADDR_W = ((INPUT_SIZE * TIME_STEPS) <= 1)
+                                          ? 1 : $clog2(INPUT_SIZE * TIME_STEPS),
+    parameter int OUTPUT_DATA_ADDR_W = ((HIDDEN_SIZE * TIME_STEPS) <= 1)
+                                           ? 1 : $clog2(HIDDEN_SIZE * TIME_STEPS),
     parameter WR_FILE = "mem/weights/gru_Wr.mem",
     parameter WZ_FILE = "mem/weights/gru_Wz.mem",
     parameter WH_FILE = "mem/weights/gru_Wh.mem",
@@ -39,11 +43,11 @@ module gru_engine_pipeline #(
     output logic               done,
 
     // External synchronous activation RAM interface.
-    output logic [31:0]        input_addr,
+    output logic [INPUT_DATA_ADDR_W-1:0] input_addr,
     input  logic signed [15:0] input_data,
 
     output logic               output_valid,
-    output logic [31:0]        output_addr,
+    output logic [OUTPUT_DATA_ADDR_W-1:0] output_addr,
     output logic signed [15:0] output_data
 );
     localparam int INPUT_WEIGHT_DEPTH = HIDDEN_SIZE * INPUT_SIZE;
@@ -57,6 +61,11 @@ module gru_engine_pipeline #(
                                 ? 1 : $clog2(INPUT_WEIGHT_DEPTH);
     localparam int RECURRENT_ADDR_W = (RECURRENT_WEIGHT_DEPTH <= 1)
                                     ? 1 : $clog2(RECURRENT_WEIGHT_DEPTH);
+    // Worst-case-safe widths for the current 16-bit datapath. These widths
+    // retain every bit that can affect the following shifts and saturation.
+    localparam int GATE_ACC_W = 40;
+    localparam int CAND_ACC_W = 54;
+    localparam int HIDDEN_MIX_SUM_W = 34;
 
     // Q formats from the verified MATLAB export:
     // DS-Conv2 模型：x=F12，h/r/z/candidate=F15，Wr/Ur/Wh/Uh=F15，
@@ -83,7 +92,8 @@ module gru_engine_pipeline #(
     logic signed [15:0] reset_gate [0:HIDDEN_SIZE-1];
     logic signed [15:0] update_gate [0:HIDDEN_SIZE-1];
     logic signed [31:0] gated_hidden [0:HIDDEN_SIZE-1];
-    logic signed [63:0] candidate_accumulator [0:HIDDEN_SIZE-1];
+    logic signed [CAND_ACC_W-1:0]
+        candidate_accumulator [0:HIDDEN_SIZE-1];
 
     initial begin
         $readmemh(WR_FILE, wr_mem, 0, INPUT_WEIGHT_DEPTH-1);
@@ -137,10 +147,10 @@ module gru_engine_pipeline #(
     logic [HIDDEN_INDEX_W-1:0] gated_hidden_index;
     logic [HIDDEN_INDEX_W-1:0] hidden_copy_index;
     logic load_data_valid;
-    logic [31:0] input_addr_counter;
+    logic [INPUT_DATA_ADDR_W-1:0] input_addr_counter;
 
-    logic signed [63:0] reset_accumulator;
-    logic signed [63:0] update_accumulator;
+    logic signed [GATE_ACC_W-1:0] reset_accumulator;
+    logic signed [GATE_ACC_W-1:0] update_accumulator;
 
     // Gate bias/address preparation. Address counters replace the long
     // gate_neuron + HIDDEN_SIZE * index combinational path.
@@ -213,24 +223,24 @@ module gru_engine_pipeline #(
     logic signed [15:0] hm_mul_b;
     logic signed [32:0] hm_product_s1;
     logic signed [32:0] hm_candidate_product;
-    logic signed [63:0] hm_sum_s2;
+    logic signed [HIDDEN_MIX_SUM_W-1:0] hm_sum_s2;
 
     integer loop_index;
 
     function automatic logic signed [15:0] saturate16(
-        input logic signed [63:0] value
+        input logic signed [CAND_ACC_W-1:0] value
     );
         begin
-            if (value > 64'sd32767)
+            if (value > 32'sd32767)
                 saturate16 = 16'sh7fff;
-            else if (value < -64'sd32768)
+            else if (value < -32'sd32768)
                 saturate16 = 16'sh8000;
             else
                 saturate16 = value[15:0];
         end
     endfunction
 
-    // 格式截斷與轉換邏輯：將 64-bit 累加器縮小為 F9 給 LUT 讀取
+    // 格式截斷與轉換邏輯：將 gate 累加器縮小為 F9 給 LUT 讀取
     always_comb begin
         reset_lut_input = saturate16(
             reset_accumulator >>> (GATE_ACC_F - LUT_INPUT_F)
@@ -375,6 +385,7 @@ module gru_engine_pipeline #(
             // Reset/Update Gate Pipeline
             // Stage 1 權重與資料暫存 -> Stage 2 乘法 -> Stage 3 累加
             // -------------------------------------------------------------
+
             gate_valid_s1 <= 1'b0;
             gate_valid_s2 <= gate_valid_s1;
             gate_last_s2 <= gate_last_s1;
@@ -386,7 +397,7 @@ module gru_engine_pipeline #(
                                         * $signed(gate_data_s1);
             end
 
-            // 乘法結果已經過暫存，這一級只保留64-bit累加器加法。
+            // 乘法結果已經過暫存，這一級只保留累加器加法。
             if (gate_valid_s2) begin
                 if (!gate_recurrent_s2) begin
                     // x(Q12) * Wr(Q15) 為 Q27，左移 3 位對齊 Q30。
@@ -406,6 +417,7 @@ module gru_engine_pipeline #(
             // -------------------------------------------------------------
             // Shared Wh/Uh Pipeline: Stage 1 -> Stage 2 -> accumulator
             // -------------------------------------------------------------
+
             candidate_valid_s1 <= 1'b0;
             candidate_valid_s2 <= candidate_valid_s1;
             candidate_last_s2 <= candidate_last_s1;
@@ -421,12 +433,12 @@ module gru_engine_pipeline #(
                 if (!candidate_is_uh_s2) begin
                     candidate_accumulator[candidate_neuron_s2]
                         <= candidate_accumulator[candidate_neuron_s2]
-                         + ($signed({{16{candidate_product_s2[47]}},
+                         + ($signed({{(CAND_ACC_W-48){candidate_product_s2[47]}},
                                       candidate_product_s2}) <<< 18);
                 end else begin
                     candidate_accumulator[candidate_neuron_s2]
                         <= candidate_accumulator[candidate_neuron_s2]
-                         + $signed({{16{candidate_product_s2[47]}},
+                         + $signed({{(CAND_ACC_W-48){candidate_product_s2[47]}},
                                     candidate_product_s2});
                 end
             end
@@ -486,7 +498,7 @@ module gru_engine_pipeline #(
                     else begin
                         issue_index <= issue_index + 1'b1;
                         input_addr_counter <= input_addr_counter
-                                            + TIME_STEPS;
+                                            + INPUT_DATA_ADDR_W'(TIME_STEPS);
                     end
                 end
 
@@ -499,6 +511,9 @@ module gru_engine_pipeline #(
                 end
 
                 // =============================================================
+                // Accumulator Pipeline
+                // =============================================================
+
                 // accumulators 填入 bias
                 S_GATE_CLEAR: begin
                     // 先暫存 bias 與兩組起始位址，切斷 gate_neuron 長路徑。
@@ -534,7 +549,8 @@ module gru_engine_pipeline #(
                         state <= S_GATE_INPUT_DRAIN;
                     end else begin
                         feature_index <= feature_index + 1'b1;
-                        gate_input_addr <= gate_input_addr + HIDDEN_SIZE;
+                        gate_input_addr <= gate_input_addr
+                                         + INPUT_ADDR_W'(HIDDEN_SIZE);
                     end
                 end
 
@@ -559,7 +575,8 @@ module gru_engine_pipeline #(
                     end else begin
                         recurrent_index <= recurrent_index + 1'b1;
                         gate_recurrent_addr
-                            <= gate_recurrent_addr + HIDDEN_SIZE;
+                            <= gate_recurrent_addr
+                             + RECURRENT_ADDR_W'(HIDDEN_SIZE);
                     end
                 end
 
@@ -589,6 +606,9 @@ module gru_engine_pipeline #(
                 end
 
                 // =============================================================
+                // Candidate Pipeline
+                // =============================================================
+
                 // Compute r .* h once. All candidate neurons reuse this vector.
                 S_GATED_H_PREP: begin
                     gated_hidden_index <= '0;
@@ -613,7 +633,7 @@ module gru_engine_pipeline #(
                     for (loop_index = 0; loop_index < HIDDEN_SIZE;
                          loop_index = loop_index + 1) begin
                         candidate_accumulator[loop_index]
-                            <= $signed({{48{bh_mem[loop_index][15]}},
+                            <= $signed({{(CAND_ACC_W-16){bh_mem[loop_index][15]}},
                                         bh_mem[loop_index]}) <<< 30;
                     end
                     wh_addr <= '0;
@@ -719,20 +739,26 @@ module gru_engine_pipeline #(
                     end
                 end
 
-                // One multiplier performs both products for each hidden unit.
+                // =============================================================
+                // Hidden State Pipeline
+                // =============================================================
+
+                // 計算 (1-z) * Candidate
                 S_HM_CAND_MUL:
                     state <= S_HM_PREV_MUL;
 
+                // 計算 z * H_prev
                 S_HM_PREV_MUL: begin
                     hm_candidate_product <= hm_product_s1;
                     state <= S_HM_ADD;
                 end
 
+                // 計算 (1-z) * Candidate_State + z * Hidden_State
                 S_HM_ADD: begin
                     hm_sum_s2
-                        <= $signed({{31{hm_candidate_product[32]}},
+                        <= $signed({{(HIDDEN_MIX_SUM_W-33){hm_candidate_product[32]}},
                                      hm_candidate_product})
-                         + $signed({{31{hm_product_s1[32]}},
+                         + $signed({{(HIDDEN_MIX_SUM_W-33){hm_product_s1[32]}},
                                      hm_product_s1});
                     state <= S_HM_WRITE;
                 end
@@ -741,8 +767,9 @@ module gru_engine_pipeline #(
                     hidden_next[hm_neuron]
                         <= saturate16(hm_sum_s2 >>> 15);
                     output_valid <= 1'b1;
-                    output_addr <= $unsigned(hm_neuron)
-                                 + HIDDEN_SIZE * $unsigned(time_index);
+                    output_addr <= OUTPUT_DATA_ADDR_W'(
+                        $unsigned(hm_neuron)
+                      + HIDDEN_SIZE * $unsigned(time_index));
                     output_data <= saturate16(hm_sum_s2 >>> 15);
 
                     if (hm_neuron == HIDDEN_SIZE-1) begin

@@ -7,6 +7,7 @@ module bn_affine #(
     parameter int CHANNELS     = 21,
     parameter int BIAS_SHIFT   = 11,
     parameter int OUTPUT_SHIFT = 13,
+    parameter int CH_ADDR_W    = (CHANNELS <= 1) ? 1 : $clog2(CHANNELS),
     parameter     A_FILE       = "mem/weights/bn1_A.mem",
     parameter     B_FILE       = "mem/weights/bn1_B.mem"
 ) (
@@ -14,7 +15,7 @@ module bn_affine #(
     input  logic               rst_n,
     input  logic               in_valid,
     input  logic signed [15:0] in_data,
-    input  logic [31:0]        in_ch_idx,
+    input  logic [CH_ADDR_W-1:0] in_ch_idx,
     output logic               out_valid,
     output logic signed [15:0] out_data
 );

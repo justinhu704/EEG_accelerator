@@ -24,11 +24,9 @@ module tb_eeg_cycle_count;
     logic signed [15:0] input_write_data;
     logic [6:0] class_index;
     logic signed [15:0] winning_logit;
-    logic logit_valid;
-    logic [6:0] logit_index;
-    logic signed [15:0] logit_data;
-    logic [6:0] logit_read_addr;
-    logic signed [15:0] logit_read_data;
+    wire logit_valid;
+    wire [6:0] logit_index;
+    wire signed [15:0] logit_data;
 
     longint unsigned cycle_number;
     longint unsigned start_cycle;
@@ -93,12 +91,12 @@ module tb_eeg_cycle_count;
         .input_write_addr(input_write_addr),
         .input_write_data(input_write_data),
         .input_ready(input_ready),
-        .class_index(class_index), .winning_logit(winning_logit),
-        .logit_valid(logit_valid), .logit_index(logit_index),
-        .logit_data(logit_data),
-        .logit_read_addr(logit_read_addr),
-        .logit_read_data(logit_read_data)
+        .class_index(class_index), .winning_logit(winning_logit)
     );
+
+    assign logit_valid = dut.fc_out_output_valid;
+    assign logit_index = dut.fc_out_output_addr;
+    assign logit_data = dut.fc_out_output_data;
 
     always #(CLOCK_PERIOD_NS/2.0) clk = ~clk;
 
@@ -115,7 +113,6 @@ module tb_eeg_cycle_count;
         input_write_en = 1'b0;
         input_write_addr = '0;
         input_write_data = '0;
-        logit_read_addr = '0;
 
         repeat (3) @(posedge clk);
         @(negedge clk);
@@ -167,7 +164,7 @@ module tb_eeg_cycle_count;
                 gru_cycle <= cycle_number;
             if (dut.fc1_start)
                 fc1_cycle <= cycle_number;
-            if (dut.fc_out_start)
+            if (dut.argmax_start)
                 fc_out_cycle <= cycle_number;
 
             if (logit_valid)
@@ -176,14 +173,20 @@ module tb_eeg_cycle_count;
             // Keep cycle profiling and stage-order verification in one run.
             if (dut.u_cnn_gru.conv1_valid) begin
                 stage_diff = $signed(dut.u_cnn_gru.conv1_data)
-                           - $signed(conv1_golden[dut.u_cnn_gru.conv1_addr]);
+                           - $signed(conv1_golden[
+                               dut.u_cnn_gru.conv1_h
+                             + 20 * (dut.u_cnn_gru.conv1_column
+                             + 156 * dut.u_cnn_gru.conv1_channel)]);
                 if (stage_diff < 0) stage_diff = -stage_diff;
                 if (stage_diff > conv1_max_diff)
                     conv1_max_diff <= stage_diff;
             end
             if (dut.u_cnn_gru.conv2_valid) begin
                 stage_diff = $signed(dut.u_cnn_gru.conv2_data)
-                           - $signed(conv2_golden[dut.u_cnn_gru.conv2_addr]);
+                           - $signed(conv2_golden[
+                               dut.u_cnn_gru.conv2_h
+                             + 19 * (dut.u_cnn_gru.conv2_column
+                             + 152 * dut.u_cnn_gru.conv2_channel)]);
                 if (stage_diff < 0) stage_diff = -stage_diff;
                 if (stage_diff > conv2_max_diff)
                     conv2_max_diff <= stage_diff;

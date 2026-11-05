@@ -13,10 +13,10 @@ module tb_gru_pipeline;
     logic start;
     logic busy;
     logic done;
-    logic [31:0] input_addr;
+    logic [8:0] input_addr;
     logic signed [15:0] input_data;
     logic output_valid;
-    logic [31:0] output_addr;
+    logic [7:0] output_addr;
     logic signed [15:0] output_data;
 
     logic signed [15:0] golden [0:OUTPUT_SIZE-1];
@@ -39,7 +39,7 @@ module tb_gru_pipeline;
         .write_addr('0),
         .write_data('0),
         .read_en(1'b1),
-        .read_addr(input_addr[$clog2(INPUT_DEPTH)-1:0]),
+        .read_addr(input_addr),
         .read_data(input_data)
     );
 

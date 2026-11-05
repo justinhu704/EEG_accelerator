@@ -11,7 +11,9 @@ module streaming_maxpool #(
     parameter int INPUT_F  = 13,
     parameter int OUTPUT_F = 13,
     parameter int OUT_H    = IN_H,
-    parameter int OUT_W    = ((IN_W - POOL_W) / STRIDE_W) + 1 // output width = 19
+    parameter int OUT_W    = ((IN_W - POOL_W) / STRIDE_W) + 1,
+    parameter int OUTPUT_ADDR_W = ((OUT_H * OUT_W * IN_CH) <= 1)
+                                ? 1 : $clog2(OUT_H * OUT_W * IN_CH)
 ) (
     input  logic               clk,
     input  logic               rst_n,
@@ -23,7 +25,7 @@ module streaming_maxpool #(
     input  logic signed [15:0] input_data,
 
     output logic               output_valid,
-    output logic [12:0]        output_addr,
+    output logic [OUTPUT_ADDR_W-1:0] output_addr,
     output logic signed [15:0] output_data
 );
     localparam int OUT_GROUPS = IN_CH / LANES;
@@ -37,6 +39,9 @@ module streaming_maxpool #(
     localparam int WINDOW_W   = (OUT_W + 1 <= 1) ? 1 : $clog2(OUT_W + 1); // 5
     localparam int STRIDE_W_W = (STRIDE_W <= 1) ? 1 : $clog2(STRIDE_W);
     localparam int CHANNEL_W  = (IN_CH <= 1) ? 1 : $clog2(IN_CH);
+    localparam int SCALE_LEFT_SHIFT = (OUTPUT_F > INPUT_F)
+                                    ? (OUTPUT_F - INPUT_F) : 0;
+    localparam int SCALE_W = 17 + SCALE_LEFT_SHIFT;
 
     // RAM for two overlapping windows
     // max_even: 0, 2, 4, ... windows
@@ -79,10 +84,10 @@ module streaming_maxpool #(
     logic stage1_previous_window_ends;
     logic stage1_current_window_is_odd;
     logic stage1_first_value;
-    logic [12:0] stage1_output_addr;
+    logic [OUTPUT_ADDR_W-1:0] stage1_output_addr;
     logic signed [15:0] completed_max;
-    logic signed [47:0] completed_extended;
-    logic signed [47:0] completed_scaled;
+    logic signed [SCALE_W-1:0] completed_extended;
+    logic signed [SCALE_W-1:0] completed_scaled;
     logic signed [15:0] completed_saturated;
 
     // 比較器
@@ -163,14 +168,15 @@ module streaming_maxpool #(
         else
             completed_max = max16(stage1_data, max_even_read_data);
 
-        completed_extended = {{32{completed_max[15]}}, completed_max};
+        completed_extended = {{(SCALE_W-16){completed_max[15]}},
+                              completed_max};
         if (OUTPUT_F >= INPUT_F)
             completed_scaled = completed_extended <<< (OUTPUT_F - INPUT_F);
         else
             completed_scaled = completed_extended >>> (INPUT_F - OUTPUT_F);
     end
 
-    sat16 u_output_sat16 (
+    sat16 #(.INPUT_W(SCALE_W)) u_output_sat16 (
         .value_in(completed_scaled),
         .value_out(completed_saturated)
     );

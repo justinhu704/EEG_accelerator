@@ -140,16 +140,14 @@ not claimed by the table above.
 
 ## Clock and UART
 
-The `main` branch uses the direct-clock configuration with `USE_PLL=0`.
-`CLOCK_50` directly drives the UART and inference path, while the current SDC
-uses a 10 ns target period for no-PLL timing and power analysis. This constraint
-does not change the DE1-SoC board's physical 50 MHz oscillator. Use the
-`board-pll-100mhz` branch when the board must actually run the accelerator at
-100 MHz.
+The DE1-SoC board provides a physical 50 MHz `CLOCK_50` input. This branch sets
+`USE_PLL=1`, and `pll_50_to_100` generates the 100 MHz clock used by the UART
+and complete inference path. Reset remains asserted until the PLL reports that
+the generated clock is locked. The SDC constrains the external oscillator to
+20 ns and derives the PLL-generated clock and clock uncertainty.
 
-`UART_CLKS_PER_BIT=109` corresponds to approximately 921600 baud when the core
-clock is 100 MHz. With the unmodified 50 MHz board clock and PLL bypassed, the
-same divider instead produces approximately 458.7 kbaud.
+With the 100 MHz core clock, `UART_CLKS_PER_BIT=109` produces approximately
+917.4 kbaud, which is compatible with the standard 921600-baud host setting.
 
 At a 100 MHz core clock, the UART format is 921600 baud, 8 data bits, no
 parity, and 1 stop bit. Multibyte fields are little-endian. The complete packet
@@ -272,9 +270,6 @@ Send the test set to the board:
 ```powershell
 python host\send_eeg_uart.py --port COM10 --baud 921600
 ```
-
-The 921600-baud command assumes a 100 MHz core clock. Use the
-`board-pll-100mhz` branch for this setting on the DE1-SoC board.
 
 Prepare and run the one-sample-per-subject demonstration:
 

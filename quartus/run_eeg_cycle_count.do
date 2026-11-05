@@ -38,8 +38,8 @@ vlog -sv ../rtl/top/eeg_controller.sv
 vlog -sv ../rtl/top/eeg_top.sv
 vlog -sv ../tb/integration/tb_eeg_cycle_count.sv
 
-# Read the selected direct core-clock period from the Quartus SDC. This keeps
-# cycle-count simulation and the current power-sweep timing constraint aligned.
+# Read the PLL core-clock period from the Quartus SDC. This testbench
+# instantiates eeg_top directly, so it models the 100 MHz core clock.
 set sdc_file "eeg_accelerator.sdc"
 set sdc_fp [open $sdc_file r]
 set sdc_text [read $sdc_fp]
