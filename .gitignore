@@ -54,3 +54,9 @@ tb/unit/tb_relu1_packed_buffer_adapter.sv
 
 # Ignore output photos
 KI_output
+
+#Ignore ADFP Test File
+rtl_adfp
+
+#Ignore canva file
+output/canva_redesign
