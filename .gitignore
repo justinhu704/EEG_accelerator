@@ -60,3 +60,6 @@ rtl_adfp
 
 #Ignore canva file
 output/canva_redesign
+
+# Generated waveform
+output/*.vcd
