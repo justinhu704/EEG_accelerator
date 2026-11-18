@@ -6,7 +6,7 @@ if {![file isdirectory rtl]} {
 }
 
 # Generate the packed 4-lane ROM files from the original MATLAB export.
-exec python host/pack_parallel_conv_weights.py
+exec python host/packing/pack_parallel_conv_weights.py
 
 if {![file exists work]} {vlib work}
 

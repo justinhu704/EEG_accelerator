@@ -7,8 +7,8 @@ if {![info exists CLOCK_PERIOD_NS] || ![info exists CLOCK_FREQ_TAG]} {
 }
 
 # 產生目前 DSConv1 -> DSConv2 streaming 架構所需的權重。
-exec python ../host/pack_dsconv1_dsconv2_weights.py
-exec python ../host/pack_parallel_conv_weights.py --weights ../mem/dsconv1_dsconv2/weights/conv3_W.mem --bias ../mem/dsconv1_dsconv2/weights/conv3_b.mem --output-weights ../mem/dsconv1_dsconv2/weights/conv3_W_x3.mem --output-bias ../mem/dsconv1_dsconv2/weights/conv3_b_x3.mem --kh 2 --kw 5 --in-ch 20 --out-ch 15 --lanes 3
+exec python ../host/packing/pack_dsconv1_dsconv2_weights.py
+exec python ../host/packing/pack_parallel_conv_weights.py --weights ../mem/dsconv1_dsconv2/weights/conv3_W.mem --bias ../mem/dsconv1_dsconv2/weights/conv3_b.mem --output-weights ../mem/dsconv1_dsconv2/weights/conv3_W_x3.mem --output-bias ../mem/dsconv1_dsconv2/weights/conv3_b_x3.mem --kh 2 --kw 5 --in-ch 20 --out-ch 15 --lanes 3
 
 # 使用乾淨的 library，避免載入修改前的舊 RTL。
 if {[file exists work]} {

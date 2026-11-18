@@ -244,7 +244,7 @@ DSConv1 pointwise words, five-lane DSConv2 pointwise words, banked input sample,
 and sample-0 golden files:
 
 ```powershell
-python host\pack_dsconv1_dsconv2_weights.py
+python host\packing\pack_dsconv1_dsconv2_weights.py
 ```
 
 Conv3 uses a separate three-lane packing script. The complete cycle-count script
@@ -303,20 +303,20 @@ The MATLAB exporter creates:
 Validate the files and packet construction without opening a COM port:
 
 ```powershell
-python host\send_eeg_uart.py --dry-run
+python host\uart\send_eeg_uart.py --dry-run
 ```
 
 Send the test set to the board:
 
 ```powershell
-python host\send_eeg_uart.py --port COM10 --baud 921600
+python host\uart\send_eeg_uart.py --port COM10 --baud 921600
 ```
 
 Prepare and run the one-sample-per-subject demonstration:
 
 ```powershell
-python host\demo_105_subjects_uart.py --prepare-only --rebuild-dataset
-python host\demo_105_subjects_uart.py --port COM10 --baud 921600
+python host\uart\demo_105_subjects_uart.py --prepare-only --rebuild-dataset
+python host\uart\demo_105_subjects_uart.py --port COM10 --baud 921600
 ```
 
 Replace `COM10` with the port shown in Windows Device Manager. The host waits

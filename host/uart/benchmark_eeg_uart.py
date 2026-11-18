@@ -19,6 +19,9 @@ from send_eeg_uart import (
     validate_dataset,
 )
 
+
+HOST_DIR = Path(__file__).resolve().parents[1]
+
 DEFAULT_COUNT = 10
 UART_BITS_PER_BYTE_8N1 = 10
 RESPONSE_BYTES = 2 + RESPONSE_SIZE_AFTER_MAGIC
@@ -38,15 +41,15 @@ def parse_args() -> argparse.Namespace:
         help="first dataset sample_id to send",
     )
     parser.add_argument(
-        "--inputs", type=Path, default=Path("host/data/test_inputs_q12.bin")
+        "--inputs", type=Path, default=HOST_DIR / "data" / "test_inputs_q12.bin"
     )
     parser.add_argument(
-        "--labels", type=Path, default=Path("host/data/test_labels.csv")
+        "--labels", type=Path, default=HOST_DIR / "data" / "test_labels.csv"
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("host/results/fpga_uart_timing_10.csv"),
+        default=HOST_DIR / "results" / "fpga_uart_timing_10.csv",
     )
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument(

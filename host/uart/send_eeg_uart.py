@@ -12,6 +12,9 @@ import time
 from pathlib import Path
 from typing import BinaryIO
 
+
+HOST_DIR = Path(__file__).resolve().parents[1]
+
 SAMPLE_WORDS = 3360
 BYTES_PER_SAMPLE = SAMPLE_WORDS * 2
 REQUEST_MAGIC = b"\xA5\x5A"
@@ -116,14 +119,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", help="serial port, for example COM5")
     parser.add_argument("--baud", type=int, default=921600)
     parser.add_argument(
-        "--inputs", type=Path, default=Path("host/data/test_inputs_q12.bin")
+        "--inputs", type=Path, default=HOST_DIR / "data" / "test_inputs_q12.bin"
     )
     parser.add_argument(
-        "--labels", type=Path, default=Path("host/data/test_labels.csv")
+        "--labels", type=Path, default=HOST_DIR / "data" / "test_labels.csv"
     )
     parser.add_argument(
         "--output", type=Path,
-        default=Path("host/results/fpga_predictions.csv")
+        default=HOST_DIR / "results" / "fpga_predictions.csv"
     )
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--limit", type=int, help="send only the first N samples")

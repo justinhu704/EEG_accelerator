@@ -17,12 +17,12 @@ from send_eeg_uart import (
 
 SUBJECT_COUNT = 105
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_SOURCE_INPUTS = SCRIPT_DIR / "data" / "test_inputs_q12.bin"
-DEFAULT_SOURCE_LABELS = SCRIPT_DIR / "data" / "test_labels.csv"
-DEFAULT_DEMO_INPUTS = SCRIPT_DIR / "data" / "demo_105_first_inputs_q12.bin"
-DEFAULT_DEMO_LABELS = SCRIPT_DIR / "data" / "demo_105_first_labels.csv"
-DEFAULT_RESULTS = SCRIPT_DIR / "results" / "fpga_demo_105_results.csv"
+HOST_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_SOURCE_INPUTS = HOST_DIR / "data" / "test_inputs_q12.bin"
+DEFAULT_SOURCE_LABELS = HOST_DIR / "data" / "test_labels.csv"
+DEFAULT_DEMO_INPUTS = HOST_DIR / "data" / "demo_105_first_inputs_q12.bin"
+DEFAULT_DEMO_LABELS = HOST_DIR / "data" / "demo_105_first_labels.csv"
+DEFAULT_RESULTS = HOST_DIR / "results" / "fpga_demo_105_results.csv"
 
 
 def parse_args() -> argparse.Namespace:

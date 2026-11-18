@@ -1,22 +1,23 @@
 # RTL report waveform for one complete EEG inference.
 #
-# Usage from the ModelSim / Questa transcript:
-#   do C:/EEG_Project/quartus/run_eeg_report_wave.do
-#
-# From PowerShell, use the ModelSim 2020.1 Windows GUI launcher:
-#   & "C:\ModelSim\modelsim_ase\win32aloem\modelsim.exe" -do \
-#       "C:\EEG_Project\quartus\run_eeg_report_wave.do"
+# From the ModelSim / Questa transcript, starting in EEG_Project:
+#   do quartus/run_eeg_report_wave.do
+# Starting in EEG_Project/quartus:
+#   do run_eeg_report_wave.do
 
 transcript on
 
-# ModelSim Intel FPGA Starter 2020.1 does not report the active .do path from
-# [info script]; it returns an internal Tcl path instead. Use the known project
-# simulation directory so that every ../rtl, ../tb and ../mem path is stable.
-cd C:/EEG_Project/quartus
+# Older ModelSim releases can return an internal Tcl path from [info script].
+# Use the launch directory to locate the relative RTL, testbench and memory files.
+if {[file isfile eeg_accelerator.qpf] && [file isdirectory quartus]} {
+    cd quartus
+} elseif {![file isfile ../eeg_accelerator.qpf] || ![file isdirectory ../rtl]} {
+    error "Run from EEG_Project or EEG_Project/quartus"
+}
 
 # Regenerate the packed ROM images used by the current DS-Conv1/DS-Conv2 RTL.
-exec python ../host/pack_dsconv1_dsconv2_weights.py
-exec python ../host/pack_parallel_conv_weights.py \
+exec python ../host/packing/pack_dsconv1_dsconv2_weights.py
+exec python ../host/packing/pack_parallel_conv_weights.py \
     --weights ../mem/dsconv1_dsconv2/weights/conv3_W.mem \
     --bias ../mem/dsconv1_dsconv2/weights/conv3_b.mem \
     --output-weights ../mem/dsconv1_dsconv2/weights/conv3_W_x3.mem \

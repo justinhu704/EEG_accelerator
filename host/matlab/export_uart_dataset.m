@@ -18,13 +18,14 @@ function export_uart_dataset(cacheFile, outDir)
             'EEG_105_stride10_mixedSess.mat');
     end
     if nargin < 2 || strlength(string(outDir)) == 0
-        outDir = fullfile(fileparts(mfilename('fullpath')), 'data');
+        hostDir = fileparts(fileparts(mfilename('fullpath')));
+        outDir = fullfile(hostDir, 'data');
     end
     cacheFile = string(cacheFile);
     outDir = string(outDir);
 
     if ~isfile(cacheFile)
-        error("Dataset cache does not exist: %s", cacheFile);
+        error("Dataset cache does not exist: %s. Pass the actual cache path to export_uart_dataset.", cacheFile);
     end
     if ~isfolder(outDir)
         mkdir(outDir);

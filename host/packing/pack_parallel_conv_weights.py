@@ -7,6 +7,9 @@ import argparse
 from pathlib import Path
 
 
+MEM_DIR = Path(__file__).resolve().parents[2] / "mem"
+
+
 def read_hex16(path: Path) -> list[int]:
     values: list[int] = []
     for line_number, line in enumerate(path.read_text().splitlines(), 1):
@@ -29,12 +32,12 @@ def pack_lanes(values: list[int], lanes: int) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--weights", type=Path, default=Path("mem/weights/conv2_W.mem"))
-    parser.add_argument("--bias", type=Path, default=Path("mem/weights/conv2_b.mem"))
+    parser.add_argument("--weights", type=Path, default=MEM_DIR / "weights" / "conv2_W.mem")
+    parser.add_argument("--bias", type=Path, default=MEM_DIR / "weights" / "conv2_b.mem")
     parser.add_argument("--output-weights", type=Path,
-                        default=Path("mem/weights/conv2_W_x4.mem"))
+                        default=MEM_DIR / "weights" / "conv2_W_x4.mem")
     parser.add_argument("--output-bias", type=Path,
-                        default=Path("mem/weights/conv2_b_x4.mem"))
+                        default=MEM_DIR / "weights" / "conv2_b_x4.mem")
     parser.add_argument("--kh", type=int, default=2)
     parser.add_argument("--kw", type=int, default=5)
     parser.add_argument("--in-ch", type=int, default=21)

@@ -9,7 +9,7 @@ if {[file isdirectory rtl] && [file isdirectory quartus]} {
 }
 
 # Generate the packed 4-lane ROM files from the original MATLAB export.
-exec python ../host/pack_parallel_conv_weights.py \
+exec python ../host/packing/pack_parallel_conv_weights.py \
     --weights ../mem/weights/conv2_W.mem \
     --bias ../mem/weights/conv2_b.mem \
     --output-weights ../mem/weights/conv2_W_x4.mem \

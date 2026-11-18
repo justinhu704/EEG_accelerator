@@ -5,6 +5,9 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 
+MEM_DIR = Path(__file__).resolve().parents[2] / "mem"
+
+
 def read_mem(path: Path) -> list[int]:
     values: list[int] = []
     for raw_line in path.read_text(encoding="ascii").splitlines():
@@ -19,11 +22,11 @@ def read_mem(path: Path) -> list[int]:
 def main() -> None:
     parser = ArgumentParser()
     parser.add_argument("--sigmoid", type=Path,
-                        default=Path("mem/lut/sigmoid_half_lut_q15.mem"))
+                        default=MEM_DIR / "lut" / "sigmoid_half_lut_q15.mem")
     parser.add_argument("--tanh", type=Path,
-                        default=Path("mem/lut/tanh_half_lut_q15.mem"))
+                        default=MEM_DIR / "lut" / "tanh_half_lut_q15.mem")
     parser.add_argument("--output", type=Path,
-                        default=Path("mem/lut/gru_activation_lut_q15.mem"))
+                        default=MEM_DIR / "lut" / "gru_activation_lut_q15.mem")
     args = parser.parse_args()
 
     sigmoid = read_mem(args.sigmoid)

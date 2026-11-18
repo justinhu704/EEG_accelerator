@@ -7,7 +7,7 @@ if {[file isdirectory rtl] && [file isdirectory quartus]} {
 }
 
 # Preserve the existing x5 files and create a separate double-width KH2 ROM.
-exec python ../host/pack_parallel_conv_weights.py \
+exec python ../host/packing/pack_parallel_conv_weights.py \
     --weights ../mem/weights/conv2_W.mem \
     --bias ../mem/weights/conv2_b.mem \
     --output-weights ../mem/weights/conv2_W_x5_kh2.mem \

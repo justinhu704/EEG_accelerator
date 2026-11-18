@@ -1,8 +1,8 @@
 transcript on
-exec python ../host/pack_parallel_conv_weights.py --weights ../mem/weights/conv1_W.mem --bias ../mem/weights/conv1_b.mem --output-weights ../mem/weights/conv1_W_x3.mem --output-bias ../mem/weights/conv1_b_x3.mem --kh 2 --kw 5 --in-ch 1 --out-ch 21 --lanes 3
-exec python ../host/pack_parallel_conv_weights.py --weights ../mem/weights/conv2_W.mem --bias ../mem/weights/conv2_b.mem --output-weights ../mem/weights/conv2_W_x5.mem --output-bias ../mem/weights/conv2_b_x5.mem --lanes 5
-exec python ../host/pack_parallel_conv_weights.py --weights ../mem/weights/conv2_W.mem --bias ../mem/weights/conv2_b.mem --output-weights ../mem/weights/conv2_W_x5_kh2.mem --output-bias ../mem/weights/conv2_b_x5_kh2.mem --lanes 5 --pair-kh
-exec python ../host/pack_parallel_conv_weights.py --weights ../mem/weights/conv3_W.mem --bias ../mem/weights/conv3_b.mem --output-weights ../mem/weights/conv3_W_x3.mem --output-bias ../mem/weights/conv3_b_x3.mem --kh 2 --kw 5 --in-ch 20 --out-ch 15 --lanes 3
+exec python ../host/packing/pack_parallel_conv_weights.py --weights ../mem/weights/conv1_W.mem --bias ../mem/weights/conv1_b.mem --output-weights ../mem/weights/conv1_W_x3.mem --output-bias ../mem/weights/conv1_b_x3.mem --kh 2 --kw 5 --in-ch 1 --out-ch 21 --lanes 3
+exec python ../host/packing/pack_parallel_conv_weights.py --weights ../mem/weights/conv2_W.mem --bias ../mem/weights/conv2_b.mem --output-weights ../mem/weights/conv2_W_x5.mem --output-bias ../mem/weights/conv2_b_x5.mem --lanes 5
+exec python ../host/packing/pack_parallel_conv_weights.py --weights ../mem/weights/conv2_W.mem --bias ../mem/weights/conv2_b.mem --output-weights ../mem/weights/conv2_W_x5_kh2.mem --output-bias ../mem/weights/conv2_b_x5_kh2.mem --lanes 5 --pair-kh
+exec python ../host/packing/pack_parallel_conv_weights.py --weights ../mem/weights/conv3_W.mem --bias ../mem/weights/conv3_b.mem --output-weights ../mem/weights/conv3_W_x3.mem --output-bias ../mem/weights/conv3_b_x3.mem --kh 2 --kw 5 --in-ch 20 --out-ch 15 --lanes 3
 if {![file exists work]} {vlib work}
 
 vlog -sv ../rtl/common/sat16.sv

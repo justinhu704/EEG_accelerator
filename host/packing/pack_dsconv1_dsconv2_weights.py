@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 BASE = ROOT / "mem" / "dsconv1_dsconv2"
 WEIGHTS = BASE / "weights"
 GOLDEN = BASE / "golden"
