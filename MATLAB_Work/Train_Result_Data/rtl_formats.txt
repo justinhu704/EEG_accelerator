@@ -1,0 +1,8 @@
+All values use signed 16-bit storage. F means fractional bits.
+
+Input F12
+DSConv1 DW F13 -> PW F15 -> BN1 F11 -> ReLU1 F11
+DSConv2 DW F11 -> PW F11 -> BN2 F11 -> ReLU2 F11 -> Pool1 F11
+Conv3 F9 -> BN3 F12 -> ReLU3 F12 -> Pool2 F12
+GRU input F12 -> LUT input F9 -> hidden/output F15
+Flatten F15 -> FC1 F13 -> ReLU F13 -> BN F12 -> FC out F10

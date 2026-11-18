@@ -1,8 +1,10 @@
-# Quartus generated files
-db/
-incremental_db/
-output_files/
-simulation/
+# Quartus databases, workspace settings, and build outputs
+/db/
+/incremental_db/
+/quartus/db/
+/output_files/
+/simulation/
+/.qsys_edit/
 *.qws
 *.qdf
 *.rpt
@@ -13,53 +15,46 @@ simulation/
 *.jdi
 *.cdf
 
-# ModelSim / Questa generated files
-questa/work/
-questa/transcript
-questa/vsim.wlf
-questa/*.mpf
-questa/*.mti
-transcript
+# ModelSim / Questa compiled libraries, logs, and waveforms
 work/
+transcript
 *.wlf
 *.bak
+/questa/*.mpf
+/questa/*.mti
+/quartus/modelsim.ini
+/output/*.vcd
+/power/*.vcd
 
-# MATLAB-exported simulation data and reference documents
-mem/*
-!mem/lut/
-mem/lut/*
-!mem/lut/gru_activation_lut_q15.mem
-!mem/board/
-!mem/board/sample0_q12.mem
-!mem/board/sample105_q12.mem
+# Generated memory data, with tracked LUT and board samples retained
+/mem/*
+!/mem/lut/
+/mem/lut/*
+!/mem/lut/gru_activation_lut_q15.mem
+!/mem/board/
+/mem/board/*
+!/mem/board/sample0_q12.mem
+!/mem/board/sample105_q12.mem
+
+# Host datasets and hardware-run results
+/host/data/*.bin
+/host/data/*.csv
+/host/results/*.csv
+
+# Local scratch work, reports, and presentation exports
+/tmp/
+/outputs/
+/KI_output/
+/output/canva_redesign/
+/EEG_研究交接包_*/
+/驗證報告位置/
+/c5_pin_model_dump.txt
 *.pdf
-
-# Miscellaneous generated files
-c5_pin_model_dump.txt
 *.tmp
 __pycache__/
-host/data/*.bin
-host/data/*.csv
-host/results/*.csv
-tmp/
-power/*.vcd
 
-# ModelSim generated file
-quartus/modelsim.ini
-
-# Ignore rtl/unit_testbenches folder
-quartus/run_relu1_packed_buffer_adapter.do
-rtl/memory/relu1_packed_buffer_adapter.sv
-tb/unit/tb_relu1_packed_buffer_adapter.sv
-
-# Ignore output photos
-KI_output
-
-#Ignore ADFP Test File
-rtl_adfp
-
-#Ignore canva file
-output/canva_redesign
-
-# Generated waveform
-output/*.vcd
+# Existing local-only RTL experiments and the separate ADFP version
+/quartus/run_relu1_packed_buffer_adapter.do
+/rtl/memory/relu1_packed_buffer_adapter.sv
+/tb/unit/tb_relu1_packed_buffer_adapter.sv
+/rtl_adfp/
