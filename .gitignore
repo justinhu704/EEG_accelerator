@@ -58,3 +58,6 @@ __pycache__/
 /rtl/memory/relu1_packed_buffer_adapter.sv
 /tb/unit/tb_relu1_packed_buffer_adapter.sv
 /rtl_adfp/
+
+#MATLAB module
+/MATLAB_Work/Train_module_final/EEG_CNN_GRU_dsconv1_dsconv2_mixedSess.mat
